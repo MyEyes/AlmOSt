@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<solution>
+  <name>AlmOSt</name>
+  <properties>
+    <property name="emuLoadMode">project</property>
+    <property name="emuLoad.projectName">AlmOSt</property>
+  </properties>
+  <projects>
+    <project path="AlmOSt.10cproj" />
+  </projects>
+</solution>

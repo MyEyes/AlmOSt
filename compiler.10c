@@ -1,0 +1,1043 @@
+; --------------------------------------------
+; Title:   compiler
+; Author:  Nils Ole Timm
+; Date:    11.07.2012
+; Version: 1.0
+; --------------------------------------------
+
+set [char_counter], test
+:parse_start
+	set Z, POP
+	set [program_counter], POP
+	set [char_counter], POP
+	set [labels_to_fill_count], 0
+	set PUSH, Z
+:parse_op
+	set	A, [program_counter]
+	ifg 0x2fff, A
+		set PC, err_addr
+	set B, [char_counter]
+	jsr skip_whites;
+	set C, [B]
+	ife C, 0; Done
+		set X, 0
+	ife C, 0
+		jsr fill_labels
+	ife C, 0; Done
+		set Y, [program_counter]
+	ife C, 0; Done
+		set PC, POP
+	ife C, 0x3A; : add label
+		set PC, add_label
+	ife C, 0x41 ;A
+		set PC, parse_op_A
+	ife C, 0x42 ;B
+		set PC, parse_op_B
+	ife C, 0x44 ;D
+		set PC, parse_op_D
+	ife C, 0x48 ;H
+		set PC, parse_op_H
+	ife C, 0x49 ;I
+		set PC, parse_op_I
+	ife C, 0x4a ;J
+		set PC, parse_op_J
+	ife C, 0x4d ;M
+		set PC, parse_op_M
+	ife C, 0x52 ;R
+		set PC, parse_op_R
+	ife C, 0x53;S
+		set PC, parse_op_S
+	ife C, 0x58;X
+		set PC, parse_op_X
+	set PC, error
+:parse_op_A
+	add B, 1
+	set C, [B]
+	ife C, 0x53 ;S
+		set PC, parse_op_AS
+	ife C, 0x44 ;D
+		set PC, parse_op_AD
+	ife C, 0x4e ;N
+		set PC, parse_op_AN
+	set PC, error
+:parse_op_AS
+	add B, 1
+	set C, [B]
+	ife C, 0x52;R
+		set [rop], [oASR]
+	ife C, 0x52
+		set PC, parse_val
+	set PC, error
+:parse_op_AD
+	add B, 1
+	set C, [B]
+	ife C, 0x44;D
+		set [rop], [oADD]
+	ife C, 0x44
+		set PC, parse_val
+	ife C, 0x58;X
+		set [rop], [oADX]
+	ife C, 0x58
+		set PC, parse_val
+	set PC, error
+:parse_op_AN
+	add B, 1
+	set C, [B]
+	ife C, 0x44;D
+		set [rop], [oAND]
+	ife C, 0x44
+		set PC, parse_val
+	set PC, error
+:parse_op_B
+	add B, 1
+	set C, [B]
+	ife C, 0x4F
+		set PC, parse_op_BO
+	set PC, error
+:parse_op_BO
+	add B, 1
+	set C, [B]
+	ife C, 0x52;R
+		set [rop], [oBOR]
+	ife C, 0x52
+		set PC, parse_val
+	set PC, error
+:parse_op_D
+	add B, 1
+	set C, [B]
+	ife C, 0x40;A
+		set PC, parse_op_DA
+	ife C, 0x49;I
+		set PC, parse_op_DI
+	ife C, 0x56;V
+		set PC, parse_op_DV
+:parse_op_DA
+	add B, 1
+	set C, [B]
+	ife C, 0x54;T
+		set PC, parse_dat
+	set PC, error
+:parse_op_DI
+	add B, 1
+	set C, [B]
+	ife C, 0x56;V
+		set [rop], [oDIV]
+	set PC, parse_val
+	set PC, error
+:parse_op_DV
+	add B, 1
+	set C, [B]
+	ife C, 0x49;I
+		set [rop], [oDVI]
+	set PC, parse_val
+	set PC, error
+:parse_op_H
+	add B, 1
+	set C, [B]
+	ife C, 0x57;W
+		set PC, parse_op_HW
+	set PC, error
+:parse_op_HW
+	add B, 1
+	set C, [B]
+	ife C, 0x49;I
+		set [rop], [sHWI]
+	ife C, 0x49
+		set PC, parse_val_s
+	ife C, 0x4e;N
+		set [rop], [sHWN]
+	ife C, 0x4e
+		set PC, parse_val_s
+	ife C, 0x51;Q
+		set [rop], [sHWQ]
+	ife C, 0x51
+		set PC, parse_val_s
+	set PC, error
+:parse_op_I
+	add B, 1
+	set C, [B]
+	ife C, 0x41;A
+		set PC, parse_op_IA
+	ife C, 0x46;F
+		set PC, parse_op_IF
+	ife C, 0x4e;N
+		set PC, parse_op_IN
+:parse_op_IA
+	add B, 1
+	set C, [B]
+	ife C, 0x47;G
+		set [rop], [sIAG]
+	ife C, 0x47
+		set PC, parse_val_s
+	ife C, 0x51;Q
+		set [rop], [sIAQ]
+	ife C, 0x51
+		set PC, parse_val_s
+	ife C, 0x53;G
+		set [rop], [sIAS]
+	ife C, 0x53
+		set PC, parse_val_s
+:parse_op_IF
+	add B, 1
+	set C, [B]
+	ife C, 0x41;A
+		set [rop], [oIFA]
+	ife C, 0x41
+		set PC, parse_val
+	ife C, 0x42;B
+		set [rop], [oIFB]
+	ife C, 0x42
+		set PC, parse_val
+	ife C, 0x43;C
+		set [rop], [oIFC]
+	ife C, 0x43
+		set PC, parse_val
+	ife C, 0x45;E
+		set [rop], [oIFE]
+	ife C, 0x45
+		set PC, parse_val
+	ife C, 0x47;G
+		set [rop], [oIFG]
+	ife C, 0x47
+		set PC, parse_val
+	ife C, 0x4c;L
+		set [rop], [oIFL]
+	ife C, 0x4c
+		set PC, parse_val
+	ife C, 0x4e;N
+		set [rop], [oIFN]
+	ife C, 0x4e
+		set PC, parse_val
+	ife C, 0x55;U
+		set [rop], [oIFU]
+	ife C, 0x55
+		set PC, parse_val
+	set PC, error
+:parse_op_IN
+	add B, 1
+	set C, [B]
+	ife C, 0x54;T
+		set [rop], [sINT]
+	ife C, 0x54
+		set PC, parse_val_s
+	set PC, error
+:parse_op_J
+	add B, 1
+	set C, [B]
+	ife C, 0x53;S
+		set PC, parse_op_JS
+	set PC, error
+:parse_op_JS
+	add B, 1
+	set C, [B]
+	ife C, 0x52;R
+		set [rop], [sJSR]
+	ife C, 0x52
+		set PC, parse_val_s
+	set PC, error
+:parse_op_M
+	add B, 1
+	set C, [B]
+	ife C, 0x44;D
+		set PC, parse_op_MD
+	ife C, 0x4c;L
+		set PC, parse_op_ML
+	ife C, 0x4f;O
+		set PC, parse_op_MO
+	ife C, 0x55;U
+		set PC, parse_op_MU
+	set PC, error
+:parse_op_MD
+	add B, 1
+	set C, [B]
+	ife C, 0x49;I
+		set [rop], [oMDI]
+	ife C, 0x49
+		set PC, parse_val
+	set PC, error
+:parse_op_ML
+	add B, 1
+	set C, [B]
+	ife C, 0x49;I
+		set [rop], [oMLI]
+	ife C, 0x49
+		set PC, parse_val
+	set PC, error
+:parse_op_MO
+	add B, 1
+	set C, [B]
+	ife C, 0x44;I
+		set [rop], [oMOD]
+	ife C, 0x44
+		set PC, parse_val
+	set PC, error
+:parse_op_MU
+	add B, 1
+	set C, [B]
+	ife C, 0x4c;I
+		set [rop], [oMUL]
+	ife C, 0x4c
+		set PC, parse_val
+	set PC, error
+:parse_op_R
+	add B, 1
+	set C, [B]
+	ife C, 0x46;F
+		set PC, parse_op_RF
+	set PC, error
+:parse_op_RF
+	add B, 1
+	set C, [B]
+	ife C, 0x4c;I
+		set [rop], [sRFI]
+	ife C, 0x4c
+		set PC, parse_val_s
+	set PC, error
+:parse_op_S
+	add B, 1
+	set C, [B]
+	ife C, 0x42;B
+		set PC, parse_op_SB
+	ife C, 0x45;E
+		set PC, parse_op_SE
+	ife C, 0x48;H
+		set PC, parse_op_SH
+	ife C, 0x54;T
+		set PC, parse_op_ST
+	ife C, 0x55;U
+		set PC, parse_op_SU
+	set PC, error
+:parse_op_SB
+	add B, 1
+	set C, [B]
+	ife C, 0x58;X
+		set [rop], [oSBX]
+	ife C, 0x58
+		set PC, parse_val
+	set PC, error
+:parse_op_SE
+	add B, 1
+	set C, [B]
+	ife C, 0x54;
+		set [rop], [oSET]
+	ife C, 0x54
+		set PC, parse_val
+	set PC, error
+:parse_op_SH
+	add B, 1
+	set C, [B]
+	ife C, 0x4c;L
+		set [rop], [oSHL]
+	ife C, 0x4c
+		set PC, parse_val
+	ife C, 0x52;R
+		set [rop], [oSHR]
+	ife C, 0x52
+		set PC, parse_val
+	set PC, error
+:parse_op_ST
+	add B, 1
+	set C, [B]
+	ife C, 0x44;D
+		set [rop], [oSTD]
+	ife C, 0x44
+		set PC, parse_val
+	ife C, 0x49;I
+		set [rop], [oSTI]
+	ife C, 0x49
+		set PC, parse_val
+	set PC, error
+:parse_op_SU
+	add B, 1
+	set C, [B]
+	ife C, 0x42;B
+		set [rop], [oSUB]
+	ife C, 0x42
+		set PC, parse_val
+	set PC, error
+:parse_op_X
+	add B, 1
+	set C, [B]
+	ife C, 0x51
+		set PC, parse_op_XO
+	set PC, error
+:parse_op_XO
+	add B, 1
+	set C, [B]
+	ife C, 0x52
+		set [rop], [oXOR]
+	ife C, 0x52
+		set PC, parse_val
+	set PC, error
+	
+:parse_val;normal instructions
+	add B, 1
+	jsr skip_whites
+	set X, 0
+	jsr read_val
+	add B, 1
+	jsr skip_whites
+	set X, 1
+	jsr read_val
+	set Z, [program_counter]
+	set [Z], [rop]
+	and [Z], [opCodeMask]
+	set Y, [rB]
+	shl Y, 5
+	and Y, [BValueMask]
+	bor [Z], Y
+	set Y, [rA]
+	shl Y, 10
+	and Y, [AValueMask]
+	bor [Z], Y
+	ife [param_counter], 2
+		jsr swap_params
+	add [program_counter] ,1
+	add [program_counter] ,[param_counter]
+	set [param_counter], 0
+	add B, 1
+	set [char_counter], B
+	set PC, parse_op
+:parse_val_s;special instructions
+	add B, 1
+	jsr skip_whites
+	set X, 1
+	jsr read_val
+	set Z, [program_counter]
+	set [Z], 0
+	and [Z], [opCodeMask]
+	set Y, [rop]
+	shl Y, 5
+	and Y, [BValueMask]
+	bor [Z], Y
+	set Y, [rA]
+	shl Y, 10
+	and Y, [AValueMask]
+	bor [Z], Y
+	add [program_counter] ,1
+	add [program_counter] ,[param_counter]
+	set [param_counter], 0
+	add B, 1
+	set [char_counter], B
+	set PC, parse_op
+	
+:swap_params
+	set J,[program_counter]
+	set Z,[J+1]
+	set [J+1], [J+2]
+	set [J+2], Z
+	set PC, POP
+:read_val
+	set C, [B]
+	ife C, 0x5B;[
+		set PC, read_val_ob
+	ife C, 0x68;h
+		set PC, read_val_n
+	ifg C, 0x2f; '0'-'9'
+		ifg 0x3a, C
+			set PC, read_val_n
+	ife C, 0x4c; 'l' used to identify labels
+		set PC, read_val_n
+	ife C, 0x41; 'A'
+		set PC, read_val_A
+	ife C, 0x42; 'B'
+		set PC, read_val_B
+	ife C, 0x43; 'C'
+		set PC, read_val_C
+	ife C, 0x58; 'X'
+		set PC, read_val_X
+	ife C, 0x59; 'Y'
+		set PC, read_val_Y
+	ife C, 0x5a; 'Z'
+		set PC, read_val_Z
+	ife C, 0x49; 'I'
+		set PC, read_val_I
+	ife C, 0x4a; 'J'
+		set PC, read_val_J
+	ife C, 0x50; 'P'
+		set PC, read_val_P
+	ife C, 0x53; 'S'
+		set PC, read_val_S
+	ife C, 0x45; 'E'
+		set PC, read_val_E
+:read_val_ob
+	add B, 1
+	set C, [B]	
+	ife C, 0x68;h
+		set PC, read_val_obn
+	ifg C, 0x2f; '0'-'9'
+		ifg 0x3a, C
+			set PC, read_val_obn
+	ifg C, 0x4c; 'l' used to identify labels
+		set PC, read_val_obn
+	ife C, 0x41; 'A'
+		set PC, read_val_obA
+	ife C, 0x42; 'B'
+		set PC, read_val_obB
+	ife C, 0x43; 'C'
+		set PC, read_val_obC
+	ife C, 0x58; 'X'
+		set PC, read_val_obX
+	ife C, 0x59; 'Y'
+		set PC, read_val_obY
+	ife C, 0x5a; 'Z'
+		set PC, read_val_obZ
+	ife C, 0x49; 'I'
+		set PC, read_val_obI
+	ife C, 0x4a; 'J'
+		set PC, read_val_obJ
+	ife C, 0x53; 'S'
+		set PC, read_val_obS
+:read_val_obn
+	set I, 0
+	ife C, 0x4C
+		set I, 1
+	ife C, 0x4c
+		add B, 1
+	set PUSH, X
+	set PUSH, B
+	set PUSH, B
+	jsr atoi 
+	set B, POP
+	add B, X
+	set X, POP
+	set PUSH, C
+	jsr skip_whites;
+	set C, [B]
+	ifn C, 0x5D;']'
+		set PC, error
+	set C, POP
+	add [param_counter], 1
+	set Z, [param_counter]
+	add Z, [program_counter]
+	ife I, 1
+		jsr add_f_label
+	set [Z], C
+	set Y, [vbn]
+	set PC, write_val
+:read_val_obA
+	add B, 1
+	jsr skip_whites
+	set C, [B]
+	ife C, 0x2B;+
+		set Y, [vbApn]
+	ife C, 0x2B;+
+		set PC, read_val_obApn
+	ifn C, 0x5D;]
+		set PC, error
+	;If we get here we are done
+	set Y, [vbA]
+	set PC, write_val
+:read_val_obB
+	add B, 1
+	jsr skip_whites
+	set C, [B]
+	ife C, 0x2B;+
+		set Y, [vbBpn]
+	ife C, 0x2B;+
+		set PC, read_val_obBpn
+	ifn C, 0x5D;]
+		set PC, error
+	;If we get here we are done
+	set Y, [vbB]
+	set PC, write_val
+:read_val_obC
+	add B, 1
+	jsr skip_whites
+	set C, [B]
+	ife C, 0x2B;+
+		set Y, [vbCpn]
+	ife C, 0x2B;+
+		set PC, read_val_obCpn
+	ifn C, 0x5D;]
+		set PC, error
+	;If we get here we are done
+	set Y, [vbC]
+	set PC, write_val
+:read_val_obX
+	add B, 1
+	jsr skip_whites
+	set C, [B]
+	ife C, 0x2B;+
+		set Y, [vbXpn]
+	ife C, 0x2B;+
+		set PC, read_val_obApn
+	ifn C, 0x5D;]
+		set PC, error
+	;If we get here we are done
+	set Y, [vbX]
+	set PC, write_val
+:read_val_obY
+	add B, 1
+	jsr skip_whites
+	set C, [B]
+	ife C, 0x2B;+
+		set Y, [vbYpn]
+	ife C, 0x2B;+
+		set PC, read_val_obYpn
+	ifn C, 0x5D;]
+		set PC, error
+	;If we get here we are done
+	set Y, [vbY]
+	set PC, write_val
+:read_val_obZ
+	add B, 1
+	jsr skip_whites
+	set C, [B]
+	ife C, 0x2B;+
+		set Y, [vbZpn]
+	ife C, 0x2B;+
+		set PC, read_val_obZpn
+	ifn C, 0x5D;]
+		set PC, error
+	;If we get here we are done
+	set Y, [vbZ]
+	set PC, write_val
+:read_val_obI
+	add B, 1
+	jsr skip_whites
+	set C, [B]
+	ife C, 0x2B;+
+		set Y, [vbIpn]
+	ife C, 0x2B;+
+		set PC, read_val_obIpn
+	ifn C, 0x5D;]
+		set PC, error
+	;If we get here we are done
+	set Y, [vbI]
+	set PC, write_val
+:read_val_obJ
+	add B, 1
+	jsr skip_whites
+	set C, [B]
+	ife C, 0x2B;+
+		set Y, [vbJpn]
+	ife C, 0x2B;+
+		set PC, read_val_obJpn
+	ifn C, 0x5D;]
+		set PC, error
+	;If we get here we are done
+	set Y, [vbJ]
+	set PC, write_val
+:read_val_obS
+	add B, 1
+	set C, [B]
+	ifn C, 0x50;P
+		set PC, error
+	add B, 1
+	jsr skip_whites
+	ife C, 0x2B;+
+		set Y, [vbSPpn]
+	ife C, 0x2B;+
+		set PC, read_val_obSPpn
+	ifn C, 0x5D;]
+		set PC, error
+	;If we get here we are done
+	set Y, [vbSP]
+	set PC, write_val
+:read_val_obApn
+:read_val_obBpn
+:read_val_obCpn
+:read_val_obXpn
+:read_val_obYpn
+:read_val_obZpn
+:read_val_obIpn
+:read_val_obJpn
+:read_val_obSPpn
+;parse numerical value here
+	add B, 1
+	set C, [B]
+	set I, 0
+	ife C, 0x4c
+		set I, 1
+	ife C, 0x4c
+		add B, 1
+	set PUSH, Y
+	set PUSH, X
+	set PUSH, B
+	
+	set PUSH, B
+	jsr atoi 
+	
+	set B, POP
+	add B, X
+	sub B, 1
+	set X, POP
+	set Y, POP
+
+	add [param_counter], 1
+	set Z, [param_counter]
+	add Z, [program_counter]
+	ife I, 1
+		jsr add_f_label
+	
+	set [Z], C
+	set PC, write_val
+:read_val_A
+	add B, 1
+	set C, [B]
+	ifn C, 0x20;space
+		set PC, error
+	sub B, 1
+	set Y, [vA]
+	set PC, write_val
+:read_val_B
+	add B, 1
+	set C, [B]
+	ifn C, 0x20;space
+		set PC, error
+	sub B, 1
+	set Y, [vB]
+	set PC, write_val
+:read_val_C
+	add B, 1
+	set C, [B]
+	ifn C, 0x20;space
+		set PC, error
+	sub B, 1
+	set Y, [vC]
+	set PC, write_val
+:read_val_X
+	add B, 1
+	set C, [B]
+	ifn C, 0x20;space
+		set PC, error
+	sub B, 1
+	set Y, [vX]
+	set PC, write_val
+:read_val_Y
+	add B, 1
+	set C, [B]
+	ifn C, 0x20;space
+		set PC, error
+	sub B, 1
+	set Y, [vY]
+	set PC, write_val
+:read_val_Z
+	add B, 1
+	set C, [B]
+	ifn C, 0x20;space
+		set PC, error
+	sub B, 1
+	set Y, [vZ]
+	set PC, write_val
+:read_val_I
+	add B, 1
+	set C, [B]
+	ifn C, 0x20;space
+		set PC, error
+	sub B, 1
+	set Y, [vI]
+	set PC, write_val
+:read_val_J
+	add B, 1
+	set C, [B]
+	ifn C, 0x20;space
+		set PC, error
+	sub B, 1
+	set Y, [vJ]
+	set PC, write_val
+:read_val_P
+	add B, 1
+	set C, [B]
+	ife C, 0x4F;O
+		set PC, read_val_PO
+	ife C, 0x43;C
+		set Y, [vPC]
+	ife C, 0x43;C
+		set PC, write_val
+	ife C, 0x55;U
+		set PC, read_val_PU
+	set PC, error
+:read_val_PO
+	add B, 1
+	set C, [B]
+	ife C, 0x50;P
+		set Y, [vPOP]
+	ife C, 0x50
+		set PC, write_val
+	set PC, error
+:read_val_PU
+	add B, 1
+	set C, [B]
+	ifn C, 0x53;S
+		set PC, error
+	add B, 1
+	set C, [B]
+	ifn C, 0x48;H
+		set PC, error
+	set Y, [vPUSH]
+	set PC, write_val
+
+:read_val_S
+	add B, 1
+	set C, [B]
+	ife C, 0x50;P
+		set Y, [vSP]
+	ife C, 0x50
+		set PC, write_val
+	set PC, error
+:read_val_E
+	add B, 1
+	set C, [B]
+	ife C, 0x58;X
+		set Y, [vEX]
+	ife C, 0x58
+		set PC, write_val
+	set PC, error
+:read_val_n
+	set I, 0
+	ife C, 0x4c
+		set I, 1
+	ife C, 0x4c
+		add B, 1
+	set PUSH, X
+	set PUSH, B
+	set PUSH, B
+	jsr atoi 
+	set B, POP
+	add B, X
+	sub B, 2
+	set X, POP
+	add [param_counter], 1
+	set Z, [param_counter]
+	add Z, [program_counter]
+	ife I, 1
+		jsr add_f_label
+	set [Z], C
+	set Y, [vn]
+	set PC, write_val
+
+:write_val
+	ife X, 0
+		set [rb], Y
+	ife X, 1
+		set [ra], Y
+	add B, 1
+	set PC, POP
+:skip_whites
+	set C, [B]
+	ife C, 0x20
+		set PC, skip_whites_loop
+	ife C, 10
+		set PC, skip_whites_loop
+	set PC, POP
+:skip_whites_loop
+	add B, 1
+	set C, [B]
+	ife C, 0x20; Space
+		set PC, skip_whites_loop
+	ife C, 10; New Line
+		set PC, skip_whites_loop
+	set PC, POP
+:error
+	set PUSH, err_comp
+	jsr print
+	set X, 1
+	set PC, POP
+:err_addr
+	set PUSH, err_saddr
+	jsr print
+	set PC, POP
+:add_label
+	add B, 1
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set B, POP
+	add B, X
+	ifg C, [label_storage_size]
+		set PC, parse_op
+	set X, [label_storage]
+	add C, X
+	set X, [program_counter]
+	set [C], X
+	set [char_counter], B
+	set PC, parse_op
+:add_f_label
+	set PUSH, A
+	set PUSH, B
+	set PUSH, C
+	set PUSH, Z
+	set PUSH, Z
+	set PUSH, C
+	jsr add_label_to_fill
+	set Z, POP
+	set C, POP
+	set B, POP
+	set A, POP
+	set PC, POP
+:add_label_to_fill
+	set A, [labels_to_fill_count]
+	shl A, 1
+	add A, [labels_to_fill]
+	set Z, POP
+	set B, POP
+	set C, POP
+	set PUSH, Z
+	set [A], C ;addr
+	set [A+1], B ;lbl
+	add [labels_to_fill_count], 1
+	set PC, POP
+:fill_labels
+	set I, 0xffff
+	sub [labels_to_fill_count], 1
+	set PUSH, C
+:fill_labels_loop
+	add I, 1
+	set A, I
+	shl A, 1
+	add A, [labels_to_fill]
+	set X, [label_storage]
+	set B, [A]
+	set C, [A+1]
+	add X, C
+	set [B], [X]
+	ifg [labels_to_fill_count], I
+		set PC, fill_labels_loop
+	set C, POP
+	set PC, POP
+:parse_dat
+	add B, 1
+	jsr skip_whites
+	set I, 0
+	ife [B], 0x4C
+		set I, 1
+	ife [B], 0x4C
+		add B, 1
+	set PUSH, B
+	set PUSH, I
+	set PUSH, B
+	jsr atoi
+	set I, POP
+	set B, POP
+	add B, X
+	ife I, 1
+		set Z, [label_storage]
+	ife I, 1
+		add Z, C
+	ife I, 1
+		set C, [Z]
+	set X, [program_counter]
+	set [X], C
+	add [program_counter], 1
+	set [char_counter], B
+	set PC, parse_op
+;SHL 10
+:AValueMask
+dat 0xfc00
+;SHL 5
+:BValueMask
+dat 0x03e0
+:OpCodeMask
+dat 0x001f
+;Values
+:vA dat  0x0000
+:vB dat  0x0001
+:vC dat  0x0002
+:vX dat  0x0003
+:vY dat  0x0004
+:vZ dat  0x0005
+:vI dat  0x0006
+:vJ dat  0x0007
+:vbA dat  0x0008
+:vbB dat  0x0009
+:vbC dat  0x000a
+:vbX dat  0x000b
+:vbY dat  0x000c
+:vbZ dat  0x000d
+:vbI dat  0x000e
+:vbJ dat  0x000f
+:vbApn dat  0x0010
+:vbBpn dat  0x0011
+:vbCpn dat  0x0012
+:vbXpn dat  0x0013
+:vbYpn dat  0x0014
+:vbZpn dat  0x0015
+:vbIpn dat  0x0016
+:vbJpn dat  0x0017
+:vPOP dat 0x0018
+:vPUSH dat 0x0018
+:vbSP dat 0x0019
+:vPEEK dat 0x0019
+:vbSPpn dat 0x001a
+:vPICK dat 0x001a
+:vSP dat 0x001b
+:vPC dat 0x001c
+:vEX dat 0x001d
+:vbn dat 0x001e
+:vn dat 0x001f
+
+:oSET dat 0x01
+:oADD dat 0x02
+:oSUB dat 0x03
+:oMUL dat 0x04
+:oMLI dat 0x05
+:oDIV dat 0x06
+:oDVI dat 0x07
+:oMOD dat 0x08
+:oMDI dat 0x09
+:oAND dat 0x0a
+:oBOR dat 0x0b
+:oXOR dat 0x0c
+:oSHR dat 0x0d
+:oASR dat 0x0e
+:oSHL dat 0x0f
+:oIFB dat 0x10
+:oIFC dat 0x11
+:oIFE dat 0x12
+:oIFN dat 0x13
+:oIFG dat 0x14
+:oIFA dat 0x15
+:oIFL dat 0x16
+:oIFU dat 0x17
+:oADX dat 0x1a
+:oSBX dat 0x1b
+:oSTI dat 0x1e
+:oSTD dat 0x1f
+
+;special Instructions
+:sJSR dat 0x01
+:sINT dat 0x08
+:sIAG dat 0x09
+:sIAS dat 0x0a
+:sRFI dat 0x0b
+:sIAQ dat 0x0c
+:sHWN dat 0x10
+:sHWQ dat 0x11
+:sHWI dat 0x12
+
+;label token
+:rop
+dat 0x0000
+:rA
+dat 0x0000
+:rB
+dat 0x0000
+
+:label_storage_size
+dat 0x0500
+:label_storage
+dat 0x9100
+:labels_to_fill
+dat 0x9600
+:labels_to_fill_count
+dat 0x0000
+:program_counter
+dat 0x0000
+:char_counter
+dat 0x0000
+:param_counter
+dat 0x0000
+:err_comp
+dat "Could not compile",10,0
+:err_saddr
+dat "Can not write to that address",10,0
+:test
+dat "SET A h0000 "
+dat ":0 "
+dat "SET [A+h8000] h4570 "
+dat "ADD A 1 "
+dat "IFG h0200 A "
+dat "SET PC L0 "
+dat "SET PC POP "

@@ -1,0 +1,1474 @@
+; --------------------------------------------
+; Title:   AlmOSt
+; Author:  Nils Ole Timm
+; Date:    07.07.2012
+; Version: 0.9
+; --------------------------------------------
+;Start
+;The first number you see
+;Is the address of assembly code for the DCPU
+;use "asm $source $target" to compile it 
+;(Note your target address must be bigger than hb000)
+;and "jsr $addr" to jump there
+;the next two numbers are the addresses of two scripts
+;you can execute them with the "exec $addr" command
+:start
+    jsr map_devices
+    
+    jsr map_display
+	set i, 0
+    set j, 0
+    
+    set PUSH, 0
+    set PUSH, test
+    jsr cadd
+    jsr new_line
+    
+    set PUSH, 0
+    set PUSH, test_script
+    jsr cadd
+    jsr new_line
+    
+    set PUSH, 0
+    set PUSH, test_script2
+    jsr cadd
+    jsr new_line
+    
+    jsr enable_interrupts
+    
+    ;jsr cload_module
+    ;jsr cload_module
+    ;set B, add_cmd_test
+    ;jsr cext
+    
+    set A, [KEYBOARD]
+    ifn A, 0xffff
+    	set PC, no_no_kb_err
+    set PUSH, A
+    set PUSH, err_no_keyboard
+    jsr print
+    set PC, end
+;go here if there is no keyboard error
+:no_no_kb_err
+    
+    ;set A, PC
+    ;add A, 0x06
+    ;set PUSH, A
+    ;set PUSH, 7064
+    ;set PC, inc
+    
+    set PUSH, welcome
+    jsr print
+    
+    ;set PUSH, 0
+    ;jsr drv_read
+    
+    jsr get_input
+    
+    set PC, end
+    
+;Map devices    
+:map_devices
+  	hwn I
+:hw_map
+	sub I, 1
+	hwq I
+  	ife B, 0x7349
+  		ife A, 0xf615
+	    	set [MONITOR], I
+  	ife B, 0x12d0
+  		ife A, 0xb402
+	    	set [CLOCK], I
+    ;0x30cf7406
+    ife B, 0x30cf
+    	ife A, 0x7406
+        	set [KEYBOARD], I
+    ;0x74fa, 0x4cae,
+    ife B, 0x74fa
+    	ife A, 0x4cae
+    		set [DRIVE], I
+	ifn I, 0
+  		set PC, hw_map
+    set PC, POP
+    
+;map display
+:map_display
+	set A, 0
+    set B, 0x8000
+    hwi [MONITOR]
+    set PC, POP
+:enable_interrupts
+	IAS handle_int
+	set PC, POP
+:handle_int
+	ife A, 0x40
+		set PC, add_cmd
+	RFI A
+:add_cmd
+	set A, POP
+	set PUSH, I
+	set PUSH, J
+	set J, [ext_cmd_addr]
+	set I, [ext_cmd_count]
+	mul I, [ext_cmd_length]
+	add J, I
+	set I, 0
+:add_cmd_copyloop
+	set [J], [A]
+	add I, 1
+	add J, 1
+	add A, 1
+	ifg [ext_cmd_length], I
+		set PC, add_cmd_copyloop
+	sub J, I
+	add J, [ext_cmd_length]
+	sub J, 1
+	ife [J], 0
+		set [J], A
+	sub A, I
+	set I, POP
+	set J, POP
+	add [ext_cmd_count], 1
+	set PUSH, A
+	RFI A
+;puts a char at the current cursor position
+;moves up the screen by one if the cursor goes below the screen
+:putc
+	set z, POP
+	set a, POP
+    set b, POP
+    set PUSH, z
+    set x, [CURSOR]
+    set y, x
+    sub y, [VRAM]
+    ife y, 384
+    	set PC, putc_mu
+    ifg y, 384
+    	set PC, putc_mu
+:putc_mu_r
+    and b, 0xff
+    shl b, 8
+    bor a,b
+    set [x], a
+    set PC, POP
+:putc_mu
+	set PUSH, B
+    set PUSH, A
+	set x, PC
+    add x, 0x04
+    set PUSH, x
+	set PC, move_up
+    set x, [CURSOR]
+    set A, POP
+    set B, POP
+    set PC, putc_mu_r
+
+;prints a null terminated string
+;(ret, str*)
+:print
+	set z, POP
+	set a, POP
+	set PUSH, z
+:print_loop
+	ife [0x0000+A], 0
+    	set PC, POP
+    ife [0x0000+A], 10
+    	set PC, print_newline
+    set PUSH, A
+    set B, A
+    
+    set PUSH, 0x170
+    set PUSH, [0x0000+B]
+    jsr putc
+    set A, pop
+    add A, 0x01
+    set B, [CURSOR]
+    add B, 0x01
+    set [CURSOR], B
+    set PC, print_loop    
+:print_newline
+	set PUSH, A
+	jsr new_line
+    set A, POP
+    add A, 0x01
+	set PC, print_loop
+
+;checks for keyboard input
+:get_input
+    set PUSH, command_prompt
+    jsr print
+    set A, 0
+    hwi [KEYBOARD]
+:gi_reentry
+	;new line
+	jsr new_line
+    ;print ">"
+    set PUSH, 0x170
+    set PUSH, 62
+    jsr putc
+    ;Move cursor one further
+    set X, [CURSOR]
+    add X, 0x01
+    set [CURSOR], X
+    ;clear keyboard buffer and check for the next command
+    set A, 0
+    hwi [KEYBOARD]
+    set [LAST_CMD], [CURSOR]
+    
+:gi_loop1
+	;set A, 0
+    ;hwi [KEYBOARD]
+    set A, 1
+	hwi [KEYBOARD]
+	ife C, 0x0
+		set PC, gi_loop1
+    ife C, 0x10
+    	set PC, gi_back
+    ife C, 0x11
+    	set PUSH, gi_reentry
+	ife C, 0x11
+		set PC, gi_concheck
+	ifg 0x1f, C
+		set PC, gi_loop1
+	ifg C, 0x7F
+		set PC, gi_loop1
+	
+	;putc(C, 0x170)
+    set PUSH, 0x170
+    set PUSH, C
+    jsr putc
+    
+    set X, [CURSOR]
+    add X, 0x01
+    set [CURSOR], X
+    set A, 0
+    hwi [KEYBOARD]
+    set PC, gi_loop1
+:gi_back
+    set A, [CURSOR]
+    ife A, [LAST_CMD]
+    	set PC, gi_loop1
+    ife A, [VRAM]
+    	set PC, gi_loop1
+    sub A, 0x01
+    set [CURSOR], A
+    ;putc(0,0) //clear
+    set PUSH, 0
+    set PUSH, 0
+    jsr putc
+    set A, 0
+    hwi [KEYBOARD]
+    set PC, gi_loop1
+:gi_concheck
+	set Z, 0
+	set X, [CURSOR]
+	sub X, [VRAM]
+	ifg X, 0x0160
+		set Z, 1
+	set PUSH, Z
+	jsr new_line
+	set Z, POP
+	ife Z, 1
+		sub [LAST_CMD], 0x20 ;-0x20 one line up
+:gi_check
+	;strcmp(cmd_help, cmd)
+    set PUSH, cmd_help
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 0
+    	set PC, gi_help
+    ;strcmp(cmd_newline, cmd)
+    set PUSH, cmd_newline
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 0
+    	set PC, gi_newline
+    ife C, 3
+    	set PC, gi_newline
+    ;strcmp(cmd_devicelist, cmd)
+    set PUSH, cmd_devicelist
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 0
+    	set PC, gi_listdev
+    ;strcmp(cmd_inc, cmd)
+    set PUSH, cmd_inc
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_inc
+    ;strcmp(cmd_add, cmd)
+    set PUSH, cmd_add
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_add
+    	
+    ;strcmp(cmd_sub, cmd)
+    set PUSH, cmd_sub
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_sub
+    	
+    ;strcmp(cmd_sadd, cmd)
+    set PUSH, cmd_sadd
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_sadd
+    ;strcmp(cmd_ext, cmd)
+    set PUSH, cmd_ext
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_ext
+    ;strcmp(cmd_ssub, cmd)
+    set PUSH, cmd_ssub
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_ssub
+    
+    ;strcmp(cmd_jne, cmd)
+    set PUSH, cmd_jne
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_jne
+    	
+    ;strcmp(cmd_dev, cmd)
+    set PUSH, cmd_dev
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_dev
+    	
+    ;strcmp(cmd_memset, cmd)
+    set PUSH, cmd_memset
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_memset
+    	
+  	;strcmp(cmd_memset, cmd)
+    set PUSH, cmd_set
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_set
+    ;strcmp(cmd_exec, cmd)
+    set PUSH, cmd_exec
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_exec
+    ;strcmp(cmd_rdd, cmd)
+    set PUSH, cmd_rdd
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_rdd
+    ;strcmp(cmd_load_module, cmd)
+    set PUSH, cmd_load_module
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 0
+    	set PC, gi_load_module
+    ;strcmp(cmd_asm, cmd)
+    set PUSH, cmd_asm
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_asm
+    ;strcmp(cmd_jsr, cmd)
+    set PUSH, cmd_jsr
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 3
+    	set PC, gi_jsr
+   	;strcmp(cmd_print_ext, cmd)
+    set PUSH, cmd_print_ext
+    set PUSH, [LAST_CMD]
+    jsr strcmp
+    ife C, 0
+    	set PC, gi_extprint
+    	
+    ;print(err_no_command)
+    set PUSH, err_no_command
+    jsr print
+    set X, 1
+	set PC, POP
+	
+:gi_check_end
+	set X, 0
+	set PC, POP
+;help command routine
+:gi_help
+    set PUSH, help_text
+    jsr print
+    set B, [LAST_CMD]
+    add B, 5
+    set [LAST_CMD], B
+	set PC, gi_check_end
+:gi_listdev
+    jsr list_devices
+    set B, [LAST_CMD]
+    add B, 11
+    set [LAST_CMD], B
+    
+	set PC, gi_check_end
+:gi_newline
+    set B, [LAST_CMD]
+    add B, 8
+    set [LAST_CMD], B
+    jsr new_line
+	set PC, gi_check_end
+:gi_extprint
+    set B, [LAST_CMD]
+    add B, 7
+    set [LAST_CMD], B
+    jsr cprint_ext
+	set PC, gi_check_end
+:gi_inc
+	set B, [LAST_CMD]
+	add B, 4
+	
+	set PUSH, B
+	set PUSH, B
+	jsr  atoi
+	set B, POP
+	add B, X
+	add B, 1
+	set [LAST_CMD], B
+    set PUSH, C
+    jsr inc
+    
+	set PC, gi_check_end
+	
+:gi_jsr
+	set B, [LAST_CMD]
+	add B, 4
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set B, POP
+	add B, X
+	add B, 1
+	set [LAST_CMD], B
+    set PUSH, C
+    jsr cjsr
+    
+	set PC, gi_check_end
+	
+:gi_rdd
+	set B, [LAST_CMD]
+	add B, 4
+	
+	set PUSH, B
+	set PUSH, B
+	jsr  atoi
+	set B, POP
+	add B, X
+	add B, 1
+	set [LAST_CMD], B
+    set PUSH, C
+    jsr drv_read
+    
+	set PC, gi_check_end
+	
+:gi_exec
+	set B, [LAST_CMD]
+	add B, 5
+	
+	set PUSH, B
+	set PUSH, B
+	jsr  atoi
+	set B, POP
+	add B, X
+	add B, 1
+	set [LAST_CMD], B
+    set PUSH, C
+    jsr exec
+    
+	set PC, gi_check_end
+	
+:gi_add
+	set B, [LAST_CMD]
+	add B, 4
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set Y, C
+	
+	set B, POP
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set Z, C
+	set B, POP
+	add B, X
+	add B, 1
+	set [LAST_CMD], B
+	
+    set PUSH, Y
+    set PUSH, Z
+    jsr cadd
+    
+	set PC, gi_check_end
+:gi_sadd
+	set B, [LAST_CMD]
+	add B, 5
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	set [LAST_CMD], B
+	
+    jsr csadd
+    
+	set PC, gi_check_end
+	
+:gi_ssub
+	set B, [LAST_CMD]
+	add B, 5
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set Z, C
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	set [LAST_CMD], B
+	
+    jsr cssub
+    
+	set PC, gi_check_end
+
+:gi_jne
+	set B, [LAST_CMD]
+	add B, 4
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	set [LAST_CMD], B
+	
+    jsr cjne
+    
+	set PC, gi_check_end
+	
+:gi_memset
+	set B, [LAST_CMD]
+	add B, 7
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	set [LAST_CMD], B
+
+    jsr cmemset
+    
+	set PC, gi_check_end
+	
+:gi_set
+	set B, [LAST_CMD]
+	add B, 4
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	set [LAST_CMD], B
+
+    jsr cset
+    
+	set PC, gi_check_end
+	
+:gi_sub	
+	set B, [LAST_CMD]
+	add B, 4
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set Y, C
+	
+	set B, POP
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set Z, C
+	
+	set B, POP
+	add B, X
+	add B, 1
+	set [LAST_CMD], B
+	
+    set PUSH, Y
+    set PUSH, Z
+    jsr csub
+    
+	set PC, gi_check_end
+	
+:gi_asm	
+	set B, [LAST_CMD]
+	add B, 4
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set Y, C
+	
+	set B, POP
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set Z, C
+	
+	set B, POP
+	add B, X
+	add B, 1
+	set [LAST_CMD], B
+	
+    set PUSH, Y
+    set PUSH, Z
+    jsr parse_start
+    
+	set PC, gi_check_end
+	
+:gi_dev
+	set B, [LAST_CMD]
+	add B, 4
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set B, POP
+	
+	set PUSH, C
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set B, POP
+	
+	set PUSH, C
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set B, POP
+	
+	set PUSH, C
+	add B, X
+	add B, 1
+	
+	set PUSH, B
+	set PUSH, B
+	jsr atoi
+	set B, POP
+	
+	set PUSH, C
+	add B, X
+	add B, 1
+	set [LAST_CMD], B
+	
+    jsr cdev
+    
+	set PC, gi_check_end
+	
+:gi_ext
+    set B, [LAST_CMD]
+    add B, 4
+	jsr cext
+	set PC, gi_check_end
+	
+:gi_load_module
+    set B, [LAST_CMD]
+    add B, 12
+	jsr cload_module
+	set PC, gi_check_end
+
+;prints a new line at the cursor position
+:new_line
+	set A, [CURSOR]
+    add A, 32
+    set B, A
+    mod B, 32
+    sub A, B
+    set [CURSOR], A
+    set PUSH, 0
+    set PUSH, 0
+    jsr putc
+	set PC, POP
+	
+;executes a string of commands at a given memory position
+:exec
+	set Z, POP
+	set A, POP
+	set PUSH, Z
+	set [LAST_CMD], A
+:exec_loop
+	set A, [LAST_CMD]
+	ife [A], 0
+		set PC, POP
+	jsr gi_check
+	ife X, 1
+		set PC, POP
+	set PC, exec_loop
+    
+;returns value in C, 0 for equal strings
+;1 for str1*!=str2*
+;2 for strlen(str1*)>strlen(str2*)
+;3 for strlen(str1*)<strlen(str2*)
+;(ret,str1*,str2*)
+:strcmp
+	set Z, POP
+	set A, POP
+    set B, POP
+    set J, 0
+    set PUSH, Z
+:strcmp_loop
+    set X, [A]
+    set Y, [B]
+    and X, 0x00ff
+    and Y, 0x00ff
+    ife X,Y
+    	ife X, 0
+    		set PC, strcmp_eq
+    ifn X,Y
+    	set PC, strcmp_neq
+    add A, 1
+    add B, 1
+    add J, 1
+    set PC, strcmp_loop
+:strcmp_eq
+	set C, 0
+    set PC, POP
+:strcmp_neq
+	set C, 1
+    ife X, 0
+    	set C, 2
+    ife Y, 0
+    	set C, 3
+    set PC, POP
+    
+;returns result in C
+;returns length in X
+;(ret, val*)
+:atoi
+	set Z, POP
+	set A, POP
+	set PUSH, Z
+    set C, 0
+    set X, 0
+:atoi10_loop
+	set J, [A]
+	and J, 0x00ff
+	ife J, 104
+		set PC, atoi16_loopstart
+	ife J, 118
+		set PC, atoivar_loopstart
+    ifg J, 0x3a
+    	set PC, POP
+    ifg 0x30, J
+    	set PC, POP
+    mul C, 10
+    set B, [A]
+    and B, 0x00ff
+    sub B, 48
+    add C, B
+    add A, 1
+    add X, 1
+    set PC, atoi10_loop
+:atoi16_loopstart
+	add A, 1
+	add X, 1
+:atoi16_loop
+	set J, [A]
+	and J, 0x00ff
+    set B, [A]
+    and B, 0x00ff
+    sub B, 48
+    ifg 10, B
+    	set PC, atoi16_skip
+    ifg B, 9;If it's not between 0 and 9 assume capital letter -17+10='A'-'0'+10
+    	sub B, 7
+    ifg B, 15; maybe small letter
+    	sub B, 32
+    ifg 10, B
+    	set PC, POP
+    ifg B, 15
+    	set PC, POP
+:atoi16_skip
+    shl C, 4
+    add C, B
+    add A, 1
+    add X, 1
+    set PC, atoi16_loop
+:atoivar_loopstart
+	add A, 1
+	add X, 1
+:atoivar_loop
+	set J, [A]
+	and J, 0x00ff
+    ife J, 32
+    	set PC, atoivar_loopend
+    ife J, 0
+    	set PC, atoivar_loopend
+    mul C, 10
+    set B, [A]
+    and B, 0x00ff
+    sub B, 48
+    ifg B, 9;If it's not between 0 and 9 assume capital letter -17+10='A'-'0'+10
+    	sub B, 7
+    ifg B, 15; maybe small letter
+    	sub B, 32
+    add C, B
+    add A, 1
+    add X, 1
+    set PC, atoivar_loop
+:atoivar_loopend
+	ifg C, [VAR_SEGMENT_SIZE]
+		set PC, POP
+	set B, C
+	add B, [VAR_SEGMENT]
+	set C, [B]
+    set PC, POP
+;writes result into address pointed to by B
+;returns length-1 in C
+;(ret, add*, val)
+:itoa
+	set Z, POP
+	set A, POP;val
+    set B, POP;add*
+    set PUSH, Z
+    set I, 0
+:itoa_loop
+    set C, A
+    mod C, 10
+    add C, 48
+    set [B], C
+    add I, 1
+    div A, 10
+    ife A, 0
+    	set PC, itoa_end
+    add B, 1
+    set PC, itoa_loop
+:itoa_end
+	set [B+1], 0
+    set J, 0
+    set C, I
+    sub C, 1
+    shr I, 1
+:itoa_end_loop
+	set X, B
+    sub X, J
+    set Y, B
+    sub Y, C
+    add Y, J
+	set A, [X]
+    set [X], [Y]
+    set [Y], A
+    add J, 1
+    ife J, I
+		set PC, POP
+    ifg J, I
+		set PC, POP
+    set PC, itoa_end_loop
+
+;increases value by 1 and prints result
+;modifies 0x4000
+;(ret, val)
+:inc
+	set Z, POP
+	set C, POP
+	set PUSH, Z
+    add C, 1
+    
+    set PUSH, 0x4000
+    set PUSH, C
+    jsr itoa
+    
+    set PUSH, 0x4000
+    jsr print
+    set PC, POP
+    
+;jumps to position in memory and starts to execute
+;(ret, adr)
+:cjsr
+	set Z, POP
+	set C, POP
+	set PUSH, Z
+    jsr C
+    set PC, POP
+    
+;adds two values and prints the result
+;modifies 0x4000
+;(ret, val1, val2)
+:cadd
+	set Z, POP
+	set C, POP
+	set B, POP
+	set PUSH, Z
+    add C, B
+    
+    set PUSH, 0x4000
+    set PUSH, C
+    jsr itoa
+
+    set PUSH, 0x4000
+    jsr print
+    set PC, POP
+    
+;adds two values and stores their result in a variable
+:csadd
+	set Z, POP
+	set C, POP
+	set B, POP
+	set A, POP
+	set PUSH, Z
+    add C, B
+    ifg A, [VAR_SEGMENT_SIZE]
+		set PC, POP
+	add A, [VAR_SEGMENT]
+    set [A], C
+    set PC, POP
+:cssub
+	set Z, POP
+	set C, POP
+	set B, POP
+	set A, POP
+	set PUSH, Z
+    sub B, C
+    ifg A, [VAR_SEGMENT_SIZE]
+		set PC, POP
+	add A, [VAR_SEGMENT]
+    set [A], B
+    set PC, POP
+;sets memory value
+;(ret, addr, val)
+:cmemset
+	set Z, POP
+	set C, POP
+	set B, POP
+	set PUSH, Z
+    set [B], C
+    
+    set PC, POP
+    
+;sets var value
+;(ret, varid, val)
+:cset
+	set Z, POP
+	set C, POP
+	set B, POP
+	set PUSH, Z
+	ifg B, [VAR_SEGMENT_SIZE]
+		set PC, POP
+	add B, [VAR_SEGMENT]
+    set [B], C
+    
+    set PC, POP
+    
+:cprintvar
+	set Z, POP
+	set A, POP
+	set PUSH, Z
+	ifg A, [VAR_SEGMENT_SIZE]
+		set PC, POP
+	
+	set PUSH, 0x4000
+	set PUSH, [A]
+	jsr itoa
+	
+	set PUSH, 0x4000
+	jsr print
+	set PC, POP
+	
+    
+;sends an interrupt to a device
+;(ret, dev, A, B, C)
+:cdev
+	set Z, POP
+	set C, POP
+	set B, POP
+	set A, POP
+	set X, POP
+	set PUSH, Z
+	hwi X
+	set PC, POP
+    
+;subtracts val2 from val1 and prints the result
+;modifies 0x4000
+;(ret, val1, val2)
+:csub
+	set Z, POP
+	set C, POP
+	set B, POP
+	set PUSH, Z
+    sub B, C
+    
+    set PUSH, 0x4000
+    set PUSH, B
+    jsr itoa
+
+    set PUSH, 0x4000
+	jsr print
+    set PC, POP
+    
+:cjne
+	set Z, POP
+	set C, POP
+	set B, POP
+	set A, POP
+	set PUSH, Z
+	set X, A
+	set A, [LAST_CMD]
+	add A, X
+	ifn C, B
+		set [LAST_CMD], A
+	set PC, POP
+	
+:cprint_ext
+	set A, [ext_cmd_addr]
+    set I, 0
+:cprint_ext_loop
+	set J, I
+	mul J, [ext_cmd_length]
+	add J, A
+	set PUSH, A
+	set PUSH, I
+	set PUSH, J 
+	jsr print
+	jsr new_line
+	set I, POP
+	set A, POP
+	add I, 1
+	ifg [ext_cmd_count], I
+		set PC, cprint_ext_loop
+	set PC, POP
+	
+:cext
+	set A, [ext_cmd_addr]
+    set I, 0
+:cext_loop
+	set J, I
+	mul J, [ext_cmd_length]
+	add J, [ext_cmd_addr]
+	set PUSH, B
+	set PUSH, I
+	set PUSH, J
+	set PUSH, B
+	jsr strcmp
+	set I, POP
+	set B, POP
+	ife C, 0
+		set PC, cext_exec
+	ife C, 3
+		set PC, cext_exec
+	add I, 1
+	ifg [ext_cmd_count], I
+		set PC, cext_loop
+	set PUSH, err_no_command
+	jsr print
+	set PC, POP
+:cext_exec
+	set Z, I
+	add Z, 1
+	mul Z, [ext_cmd_length]
+	add Z, [ext_cmd_addr]
+	sub Z, 2
+	set Z, [Z]
+	sub Z, 1
+	add B, J ;J is from the strcmp and gives the length until the strings differed
+	add B, 1
+	set Y, I
+	set I, 0
+:cext_exec_param_loop
+	ife Z, 0xffff
+		set PC, cext_exec_exec
+	ifg I, Z
+		set PC, cext_exec_exec
+	set PUSH, B
+	set PUSH, Z
+	set PUSH, B
+	jsr atoi
+	
+	set Z, POP
+	set B, POP
+	set PUSH, C
+	add B, X
+	add B, 1
+	add I, 1
+	set PC, cext_exec_param_loop
+:cext_exec_exec
+	set J, Y
+	mul J, [ext_cmd_length]
+	add J, [ext_cmd_addr]
+	add J, [ext_cmd_length]
+	sub J, 1
+
+	jsr [J]
+	set PC, POP
+
+:cload_module
+	set PUSH, 0
+	jsr drv_read
+	set A, [MEDIA_READ_BUFFER]
+	add A, 1
+	set PUSH, A
+	set PUSH, [modules_addr]
+	jsr parse_start
+	ifn X, 1
+		jsr [modules_addr]
+	ifn X, 1
+		set [modules_addr], Y
+	set PC, POP
+;read segment from media into memory
+:drv_read
+	set Z, POP
+	set X, POP
+	set PUSH, Z
+	ife [DRIVE], 0xffff
+		set PC, drv_err_drv
+	set A, 0
+	hwi [DRIVE]
+	ifn B, 1
+		set PC, drv_err_md
+	set A, 0x0010
+	set B, X
+	set C, 10
+	set X, [MEDIA_READ_BUFFER]
+	hwi [DRIVE]
+	set PC, POP
+:drv_err_drv
+	set PUSH, err_no_drive
+	jsr print
+	set PC, POP
+:drv_err_md
+	set PUSH, err_no_medium
+	jsr print
+	set PC, POP
+	
+;lists devices
+;(ret)
+:list_devices
+  	hwn I
+:list_dev_loop
+	sub I, 1
+	hwq I
+    set J, [dev_name_count] ;num devicenames
+    set Z, device_names
+:comp_dev_loop
+    sub J, 1
+    ife [0x0000+Z], B
+    	ife [0x0001+Z], A
+        	set PC, print_devicename
+    ;19 offset between namelist entries
+:list_dev_reentry
+    add Z, 0x13
+	ifn J, 0
+    	set PC, comp_dev_loop
+   	ife J, 0
+   		set Z, unknown_device
+    ife J, 0
+    	set PC, print_devicename
+:list_dev_end_check
+    ife I, 0
+    	set PC, POP
+    set PC, list_dev_loop
+:print_devicename
+	set PUSH, I
+	set PUSH, J
+	set PUSH, Z
+	set PUSH, Z
+	;new line
+	set PUSH, I
+	jsr new_line
+	set I, POP
+	;print number
+    set PUSH, 0x4000
+    set PUSH, I
+    jsr itoa
+    
+    set PUSH, 0x4000
+    jsr print
+    ;print " "
+    set PUSH, 0x170
+    set PUSH, 32
+    jsr putc
+    ;Move cursor one further
+    set X, [CURSOR]
+    add X, 0x01
+    set [CURSOR], X
+	;print name
+	set Z, POP
+    add Z, 2
+    set PUSH, Z
+    jsr print
+    
+    set Z, POP
+    set J, POP
+    set I, POP
+    add Z, 0x13
+    set PC, list_dev_end_check
+
+;moves the screen up one line_______
+:move_up				;			|
+	set A, [CURSOR]		;			|
+    sub A, 0x20			;			|
+    set [CURSOR], A		;			|
+	set A, [VRAM]		;			|
+    set I, 0			;			|
+:mu_copy_loop1			;			|
+    ife I, 352			;			|
+    	set PC, mu_copy_loop2;		|
+    set B, A			;			|
+    add B, I			;			|
+    set X, [0x0020+B]	;			|
+    set [0x0000+B], X	;			|
+    add I, 1			;			|
+    set PC, mu_copy_loop1;			|
+:mu_copy_loop2			;			|
+    ife I, 384			;			|
+    	set PC, POP		;			|
+    set B, A			;			|
+    add B, I			;			|
+    set [0x0000+B], 0	;			|
+    add I, 1			;			|
+    set PC, mu_copy_loop2;			|
+;___________________________________/
+    
+:welcome
+	dat "This is a small command prompt", 10, 0
+:command_prompt
+    dat "Enter Command:", 0
+:err_no_keyboard
+	dat "ERROR: Could not find keyboard", 10, 0
+:err_no_drive
+	dat "ERROR: Could not find Harold Media Drive", 10 ,0
+:err_no_medium
+	dat "ERROR: Insert Medium into drive", 10 ,0
+:cmd_help
+	dat "help", 0
+:help_text
+	dat 10, "Read in the sourcecode, I'm too lazy to implement less right now", 0
+	dat 10, "Commands:",10 
+	dat " help - Prints help ",10
+	dat " inc A - increases A by 1",10
+	dat " add A B - add A and B",10
+	dat " sub A B - subtracts B from A",10
+	dat " devicelist - Lists devices",10
+	dat " dev devnum A B C - sends the device an interrupt with A B C ",10
+	dat " memset addr val - sets memory at addr to value val",10
+    dat " sadd/ssub - like add and sub but store the result in the variable given in the first parameter", 10
+    dat " exec - executes script at given memory address", 10
+    dat " jne - jumps relative in script if 2nd and 3rd parameter are differen", 10
+    dat " rdd - read drive, reads given sector to [MEDIA_READ_BUFFER]", 0
+:cmd_devicelist
+	dat "devicelist", 0
+:cmd_inc
+	dat "inc ",0
+:cmd_add
+	dat "add ",0
+:cmd_sub
+	dat "sub ",0
+:cmd_sadd
+	dat "sadd ",0
+:cmd_ssub
+	dat "ssub ",0
+:cmd_dev
+	dat "dev ",0
+:cmd_rdd
+	dat "rdd ",0
+:cmd_memset
+	dat	"memset ",0
+:cmd_newline
+	dat "newline",0
+:cmd_set
+	dat "set ",0
+:cmd_printvar
+	dat "printvar ",0
+:cmd_exec
+	dat "exec ",0
+:cmd_jne
+	dat "jne ",0
+:cmd_asm
+	dat "asm ",0
+:cmd_jsr
+	dat "jsr ",0
+:cmd_ext
+	dat "ext ",0
+:cmd_print_ext
+	dat "list_ext",0
+:cmd_load_module
+	dat "load_module",0
+:err_no_command
+	dat "Unknown command", 0
+:dev_name_count
+	dat 0x0006
+:device_names
+	dat 0x40e4, 0x1d9d, "Sleep Chamber   ",0
+    dat 0x7349, 0xf615, "Display Monitor ",0
+    dat 0x30cf, 0x7406, "Generic Keyboard",0
+    dat 0x12d0, 0xb402, "Clock Timer     ",0
+    dat 0x74fa, 0x4cae, "Harold Media Drv",0
+    dat 0xDEB9, 0x1111, "Generic Debugger",0
+:unknown_device
+	dat 0,0,"Unknown device",0
+:ext_cmd_count
+	dat 0x0000
+:ext_cmd_addr
+	dat 0x7000
+;format: name numparams jump_addr
+:ext_cmd_length
+	dat 0x0010
+:modules_addr
+	dat 0x3000
+;script address is: h0832
+:test_script
+	dat "set 1 10 " ;v1=10
+	dat "add v1 0 " ;prints v1+0
+	dat "newline "
+	dat "ssub 1 v1 1 "; v1=v1-1
+	dat "jne 65492 v1 0 ", 0; jump back to printing when v1 is not 0
+;script address is: h0860
+:test_script2
+	dat "set 1 h80 " ;v1=10
+	dat "ssub 1 v1 1 " ;v1=v1-1
+	dat "sadd 2 v1 h8020 " ;v2=v1+0x8020
+	dat "memset v2 h4561 " ;[v2]=0x4561
+	dat "jne 65477 v1 0 ", 0 ;jump back if v1 is not 0
+:add_cmd_test
+	dat "ABC "
+:MONITOR
+	dat 0xffff
+:CLOCK
+	dat 0xffff
+:KEYBOARD
+    dat 0xffff
+:DRIVE
+	dat 0xffff
+:VRAM
+	dat 0x8000
+:CURSOR
+	dat 0x8000
+:LAST_CMD
+	dat 0x0000
+:VAR_SEGMENT
+	dat 0x9000
+:VAR_SEGMENT_SIZE
+	dat 0x0100
+:MEDIA_READ_BUFFER
+	dat 0xA000
+:end
+	set i, PC
+    sub i, 1
+	set PC, i
