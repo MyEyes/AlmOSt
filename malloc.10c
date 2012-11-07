@@ -1,0 +1,105 @@
+; --------------------------------------------
+; Title:   memory
+; Author:  Ole
+; Date:    01.11.2012
+; Version: 
+; --------------------------------------------
+
+;Regions need to be sorted in order to guarantee not granting the ability to write somewhere to more than one process
+;Memregion struct
+;0:pid
+;1:previous memregion address
+;2:next memregion address
+;3:size in words
+;4:address
+
+
+;A:pid, B:Size
+:malloc
+set X, B					;Size of free space needed for region
+add X, 5
+
+set I, [heap_start]			;Current mem_position
+set J, 0					;Previous memregion
+set C, 0
+set Z, [heap_list_start]	;Next memregion
+
+:malloc_loop
+ife Z, 0
+	set Z, [heap_end]
+set Y, I					;Set C to the potential end address of our new memory region
+add Y, X
+ifg Z, Y					;If it fits in before the next region insert it
+	set PC, malloc_insert
+ife Z, Y
+	set PC, malloc_insert
+ife Z, [heap_end]
+	set PC, malloc_error
+							;Otherwise move on to the next region
+set J, C					;J remembers the previous memregion
+set C, Z					;C becomes the next memregion
+set I, [C+3]				;I becomes the next memposition
+add I, [C+4]
+set Z, [Z+2]				;Z moves one further
+set PC, malloc_loop
+
+:malloc_insert
+set [I], A
+set [I+1], J
+set [I+2], Z
+set [I+3], B
+set [I+4], I
+add [I+4], 5
+
+ife C, 0
+	set [heap_list_start], I
+ifn Z, [heap_end]
+	set [Z+1], I
+ifn C, 0
+	set [C+2], I
+ifn C, 0
+	set [I+1], C
+set C, [I+4]
+set PC, POP
+
+:malloc_error
+set A, malloc_failed_error_message
+jsr print_error
+set C, 0xffff
+set PC, POP
+
+;A: address
+:dealloc
+set I, [heap_list_start]
+set J, 0
+:dealloc_loop
+ife I, 0
+	set PC, dealloc_loop_end
+ife [I+4], A
+	set PC, dealloc_remove
+set J, I
+set I, [I+2]
+set PC, dealloc_loop
+:dealloc_loop_end
+set PC, POP
+
+:dealloc_remove
+;When we are at the start of the list
+set X, [I+2] ;Set X to the next element after I
+ife J, 0
+	set [heap_list_start], [I+2]
+ifn J, 0
+	set [J+2], X ;The next memregion from the perspective of J is now the next one from I
+ifn X, 0
+	set [X+1], J ;The previous element of X is now J
+set PC, POP
+
+
+:heap_start
+dat 0x4000
+:heap_end
+dat 0xA000
+:heap_list_start
+dat 0x0000
+:malloc_failed_error_message
+dat "Could not allocate memory!",0

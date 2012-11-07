@@ -1,0 +1,22 @@
+; --------------------------------------------
+; Title:   Memory Map
+; Author:  Ole
+; Date:    31.10.2012
+; Version: 
+; --------------------------------------------
+;Everything is hex
+;All the memory up to 0x8000 is used up by the OS
+;[0x4000-0xA000] Heap Memory
+;[0xF800-0xFFFF] RESERVED for Stack
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;

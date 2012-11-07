@@ -1,0 +1,22 @@
+; --------------------------------------------
+; Title:   sped_test
+; Author:  Ole
+; Date:    05.11.2012
+; Version: 
+; --------------------------------------------
+
+:sped_test
+jsr keyboard_getc
+and C, 0x00ff
+ife C, 0x11
+	jsr exit
+add A, 7
+add B, 9
+add B, A
+add C, 3
+add C, B
+ife C, 0x80
+	jsr sped_add_point
+ife C, 0x81
+	jsr sped_remove_point
+set PC, sped_test

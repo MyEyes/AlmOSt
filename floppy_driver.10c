@@ -1,0 +1,146 @@
+; --------------------------------------------
+; Title:   floppy_driver
+; Author:  Ole
+; Date:    01.11.2012
+; Version: 
+; --------------------------------------------
+
+:floppy_detected
+set PUSH, I
+set PUSH, J
+ifn [floppy_version], C
+	set PC, POP
+set [read_memory_call], floppy_read_memory
+set [floppy_id], I
+
+;Allocate buffer for reading out sectors
+set A, 0
+set B, 512
+jsr malloc
+set [floppy_sector_buffer], C
+
+set J, POP
+set I, POP
+set PC, POP
+
+;A: Sector, B:Target Memory
+:floppy_read_sector
+set X, A
+set Y, B
+set A, 2
+hwi [floppy_id]
+set PC, POP
+
+;A:Address, B:Size
+:floppy_read_memory
+
+set PUSH, A		;Store A and B and allocate memory to write to
+set PUSH, B
+set A, 0
+jsr malloc
+set B, POP
+set A, POP
+
+set I, A		;I is the start sector
+div I, 512
+
+set Z, I		;Figure out the offset into the first sector
+mul Z, 512
+sub Z, A
+mul Z, -1
+
+set X, C
+set Y, Z		;Add offset to current target
+add C, B
+
+:floppy_read_memory_sector_loop	;Read current sector into memory
+set PUSH, A
+set PUSH, X
+set X, I
+set Y, [floppy_sector_buffer]
+set A, 2
+hwi [floppy_id]
+set X, POP
+set A, POP
+add Y, Z
+
+:floppy_read_memory_copy_loop ;Copy relevant regions of current sector into target memory
+set [X], [Y]
+add X, 1
+add Y, 1
+ife X, C
+	set PC, floppy_read_memory_end
+ifn Y, 512
+	set PC, floppy_read_memory_copy_loop
+set Z, 0
+add I, 1
+set PC, floppy_read_memory_sector_loop
+
+:floppy_read_memory_end
+sub C, B
+set PC, POP
+
+:floppy_write_sector
+set X, A
+set Y, B
+set A, 3
+hwi [floppy_id]
+set PC, POP
+
+:floppy_get_status
+set PC, POP
+
+:floppy_get_error
+set PC, POP
+
+:floppy_print_status
+ife [floppy_id], 0xffff
+	set PC, POP
+set A, floppy_status
+jsr print
+set A, 0
+hwi [floppy_id]
+ife B, 0
+	set A, floppy_status_NO_MEDIA
+ife B, 1
+	set A, floppy_status_READY
+ife B, 2
+	set A, floppy_status_READY_WP
+ife B, 3
+	set A, floppy_status_BUSY
+	jsr print
+set PC, POP
+
+:floppy_print_error
+set PC, POP
+
+:floppy_status
+dat "Floppy Status:",0x11,0
+:floppy_status_NO_MEDIA
+dat "No Media",0x11,0
+:floppy_status_READY
+dat "Ready",0x11,0
+:floppy_status_READY_WP
+dat "Ready, but protected",0x11,0
+:floppy_status_BUSY
+dat "Busy",0x11,0
+
+:floppy_error_NONE
+dat "No error",0x11,0
+:floppy_error_BUSY
+dat "Busy",0x11,0
+
+:floppy_sector_size
+dat 0x512
+
+:floppy_sector_buffer
+dat 0x0000
+
+:floppy_device_idA
+dat 0x24c5
+:floppy_device_idB
+dat 0x4fd5
+:floppy_version
+dat 0x000b
+:floppy_id
+dat 0xffff

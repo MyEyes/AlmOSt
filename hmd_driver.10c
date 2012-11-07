@@ -1,0 +1,218 @@
+; --------------------------------------------
+; Title:   hmd_driver
+; Author:  Ole
+; Date:    05.11.2012
+; Version: 
+; --------------------------------------------
+
+;read: 	A: Address, B: Size
+;write:	A: Address, B: Size, X: Disk Address
+
+:hmd_detected
+set PUSH, I
+set PUSH, J
+ifn [hmd_version], C
+	set PC, POP
+set [read_memory_call], hmd_read_memory
+set [write_memory_call], hmd_write_memory
+set [hmd_id], I
+
+;Allocate buffer for reading out sectors
+set A, 0
+set B, [hmd_sector_size]
+jsr malloc
+set [hmd_sector_buffer], C
+
+set A, 0x01
+hwi [hmd_id]
+
+set J, POP
+set I, POP
+set PC, POP
+
+;A: Sector, B:Target Memory
+:hmd_read_sector
+set X, B
+mul C, 128
+add X, C
+set B, A
+set A, 0x0010
+hwi [hmd_id]
+set PC, POP
+
+;A:Address, B:Size, C:Cluster, X:Target_memory
+:hmd_read_memory
+jsr hmd_check_media_present
+ife C, -1
+	set PC, POP
+	
+set PUSH, C
+ifn X, 0
+	set PC, hmd_read_skip_alloc
+set PUSH, A		;Store A and B and allocate memory to write to
+set PUSH, B
+set A, 0
+;B is already set as the parameter
+jsr malloc
+set B, POP
+set A, POP
+set X, C
+
+:hmd_read_skip_alloc
+
+set J, POP ;Contains the former value of C, I+128*J is the correct sector for that memory in cluster C
+mul J, 128
+
+set C, X
+
+set I, A		;I is the start sector
+div I, [hmd_sector_size]
+
+set Z, I		;Figure out the offset into the first sector
+mul Z, [hmd_sector_size]
+sub Z, A
+mul Z, -1
+
+set X, C
+set Y, Z		;Add offset to current target
+add C, B
+
+:hmd_read_memory_sector_loop	;Read current sector into memory
+set PUSH, X
+set PUSH, B
+set PUSH, C
+set X, [hmd_sector_buffer]
+set B, I
+add B, J
+set C, 1
+set A, 0x0010
+hwi [hmd_id]
+set C, POP
+set B, POP
+set X, POP
+set Y, [hmd_sector_buffer]
+add Y, Z
+set A, Y
+add A, [hmd_sector_size]
+:hmd_read_memory_copy_loop ;Copy relevant regions of current sector into target memory
+set [X], [Y]
+add X, 1
+add Y, 1
+ife X, C
+	set PC, hmd_read_memory_end
+ifl Y, A
+	set PC, hmd_read_memory_copy_loop
+set Z, 0
+add I, 1
+set PC, hmd_read_memory_sector_loop
+
+:hmd_read_memory_end
+sub C, B
+set PC, POP
+
+
+;A: Address in RAM, B: Size, C: Cluster, X: Address on disk
+:hmd_write_memory
+
+jsr hmd_check_media_present
+ife C, -1
+	set PC, POP
+set I, X		;I is the start sector
+div I, [hmd_sector_size]
+
+set Z, I		;Figure out the offset into the first sector
+mul Z, [hmd_sector_size]
+sub Z, X
+mul Z, -1
+set J, A
+add J, B
+set Y, C
+mul Y, 128
+
+;Copy current sector to be written to RAM
+:hmd_write_copy_sector
+set PUSH, X
+set PUSH, B
+set PUSH, A
+set X, [hmd_sector_buffer]
+set B, I
+add B, Y
+set C, 1
+set A, 0x0010
+hwi [hmd_id]
+set A, POP
+set B, POP
+set X, POP
+set C, Z
+add C, [hmd_sector_buffer]
+set Z, C
+add Z, [hmd_sector_size]
+
+;Modify current sector to change needed memory regions
+:hmd_write_modify_sector
+set [C], [A]
+add C, 1
+add A, 1
+ife A, J
+	set PC, hmd_write_flush_sector
+ife C, Z
+	set PC, hmd_write_flush_sector
+set PC, hmd_write_modify_sector
+
+:hmd_write_flush_sector
+set PUSH, X
+set PUSH, B
+set PUSH, A
+set X, [hmd_sector_buffer]
+set B, I
+add B, Y
+set C, 1
+set A, 0x0011
+hwi [hmd_id]
+set A, POP
+set B, POP
+set X, POP
+set Z, 0
+
+ife J, A
+	set PC, POP
+set PC, hmd_write_copy_sector
+
+
+:hmd_write_sector
+set PC, POP
+
+:hmd_check_media_present
+set PUSH, B
+set PUSH, A
+set A, 0
+hwi [hmd_id]
+set A, POP
+ife B, 0
+	set PC, hmd_exit_no_media
+set B, POP
+set PC, POP
+:hmd_exit_no_media
+set B, POP
+set A, hmd_no_media_error
+jsr print
+set C, -1
+set PC, POP
+
+:hmd_sector_size
+dat 0x200
+
+:hmd_sector_buffer
+dat 0x0000
+
+:hmd_no_media_error
+dat "No Medium in drive",0x11,0
+
+:hmd_device_idA
+dat 0x4cae
+:hmd_device_idB
+dat 0x74fa
+:hmd_version
+dat 0x07c2
+:hmd_id
+dat 0xffff

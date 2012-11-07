@@ -1,0 +1,614 @@
+; --------------------------------------------
+; Title:   file_system
+; Author:  Ole
+; Date:    02.11.2012
+; Version: 
+; --------------------------------------------
+
+;fs_info_struct
+;[0] 	magic number
+;[1-2]	cluster and address of root directory
+
+;memory usage info
+;Sectors 1-4
+;Every byte points to the memory region that the owner is stored, 0 means free
+
+;fs_entry struct
+;[0] type_id
+;		Type IDs: 	0xDEAD - 	directory
+;					0xDEAF -	File
+;[1] address
+;[2-3] parent_entry(Cluster, Address)
+
+;One cluster is 128 sectors, 128*512->65536 Address range
+;fs_cluster_info
+;[0]: 		cluster_id
+;[1]:		last_cluster_flag
+;[4-511]:	127 fs_entries
+
+
+;fs_directory struct
+;[0]		entry(Address)
+;[1-17]		name
+;[18-511]	&fs_entry(cluster,address)
+
+;fs_file_struct
+;[0]		entry(Address)
+;[1-17] 	name
+;[18]		size
+;[19-?] 	data
+
+:fs_initialize
+set A, 0
+set B, 0x0200
+jsr malloc
+set [fs_buffer], C
+
+set A, 0
+set B, 512
+jsr malloc
+set [fs_directory_buffer], C
+
+set A, 0
+set B, 512
+jsr malloc
+set [fs_cluster_buffer], C
+set PC, POP
+
+;returns 0 if the fs is alright, -1 if it's not formatted
+:fs_check
+set X, [fs_directory_buffer]
+set A, 0
+set B, 15
+set C, 0
+jsr read_memory
+set A, [fs_directory_buffer]
+ife [A], [fs_format_magic]
+	set PC, POP
+set A, fs_not_formated_error
+jsr print_error
+set C, -1
+set PC, POP
+
+;creates a new filesystem on the floppy
+:fs_format
+set A, [fs_directory_buffer]
+set [A], [fs_format_magic]
+set [A+1], 1
+set [A+2], [fs_sector_size]
+set A, [fs_directory_buffer]
+set B, 15
+set X, 0
+set C, 0
+jsr write_memory
+set C, 1
+jsr fs_wipe_cluster
+set A, fs_root_directory_string
+set B, 0
+set C, 0
+jsr fs_create_directory
+set PC, POP
+
+;wipes cluster C info
+:fs_wipe_cluster
+set J, 0
+set I, [fs_cluster_buffer]
+;Fill memory with 0s and write to system
+:fs_wipe_memory_loop
+sti [I], 0
+ifl J, [fs_sector_size]
+	set PC, fs_wipe_memory_loop
+set A, [fs_cluster_buffer]
+set [A], C
+set [A+1], 1
+set B, [fs_sector_size]
+set X, 0x0000
+jsr write_memory
+set PC, POP
+
+;A: mem_descr_id
+:fs_load_cluster_info
+jsr fs_get_current_cluster
+ife A,C
+	set PC, POP
+	
+set PUSH, A					;Store current cluster info
+set A, C
+jsr fs_store_cluster_info
+
+set A, 0
+set B, [fs_sector_size]
+set X, [fs_cluster_buffer]
+set C, POP
+jsr read_memory
+set PC, POP
+
+;A: mem_descr_id
+:fs_store_cluster_info
+set PUSH, A
+set X, 0
+set B, [fs_sector_size]
+set A, [fs_cluster_buffer]
+set C, POP
+jsr write_memory
+set PC, POP
+
+;A:size, B:type, C: parent_cluster, X: parent_address,  returns first free sector in C
+:fs_get_free_sector
+add A, 511
+div A, 512
+set PUSH, B
+set PUSH, C
+set PUSH, X
+
+
+;Set C to cluster id
+set C, [fs_cluster_buffer]
+set C, [C]
+
+set PUSH, A
+set A, C
+jsr fs_load_cluster_info
+set A, POP
+shl A, 2; A*=4
+
+set I, [fs_cluster_buffer]
+set Z, I
+add Z, [fs_sector_size]
+set J, 0
+
+:fs_get_free_sector_loop
+add I, 4
+add J, 4;Step size of fs_entry
+ifg [I], 0
+	set J, 0
+ife I, Z
+	set PC, fs_error_no_mem
+ife J, A
+	set PC, fs_get_free_sector_end
+set PC, fs_get_free_sector_loop
+:fs_get_free_sector_end
+set Z, I
+sub Z, J
+add Z, 4
+sub Z, [fs_cluster_buffer]
+shr Z, 2; Z/=4
+mul Z, [fs_sector_size]
+
+
+set X, POP
+set C, POP
+set B, POP
+:fs_get_free_sector_end_loop
+set [I], B
+set [I+1], Z
+set [I+2], C
+set [I+3], X
+sub I, 4
+sub J, 4
+ifn J, 0
+	set PC, fs_get_free_sector_end_loop
+set C, Z
+set PC, POP
+
+:fs_error_no_mem
+set A, fs_out_of_memory
+jsr print
+set PC, POP
+
+;A: src, B, trgt
+:fs_str_copy
+set I, B
+set J, A
+set Z, J
+add Z, 16
+:fs_str_copy_loop
+sti [I], [J]
+ife [J], 0
+	set PC, fs_str_copy_end	;abort early if J ends earlier
+ifl J, Z
+	set PC, fs_str_copy_loop
+:fs_str_copy_end
+set [I], 0
+set PC, POP	
+
+
+
+;A: &name, B: &parent, C: parent_cluster
+:fs_create_directory
+							;If no directory is specified default to parent directory
+ife B, 0
+	set B, 0x0200
+ife C, 0
+	set C, 1
+set PUSH, B
+set PUSH, C
+set PUSH, A
+							;Get enough free entries
+set A, 512					;Size of directory structure
+set X, B					;Address of parent
+set B, [fs_directory_magic]	;Magic word for handler
+jsr fs_get_free_sector
+set A, POP
+set PUSH, C
+
+set B, [fs_buffer]			;Write entry into first byte
+set [B], C					
+add B, 1
+jsr fs_str_copy				;Copy name into the next 16 bytes
+
+set I, [fs_buffer]			;Fill the rest of the buffer with 0s
+add I, 18
+set J, I
+sub J, [fs_buffer]
+:fs_create_directory_loop
+sti [I], 0
+ifl J, [fs_sector_size]
+	set PC, fs_create_directory_loop
+
+set A, [fs_buffer]			;Write buffer to disk
+set B, [fs_sector_size]
+set C, POP
+set X, C
+set PUSH, C
+jsr fs_get_current_cluster	;Set C to the current cluster
+jsr write_memory
+
+jsr fs_get_current_cluster
+set A, C
+set B, POP
+set C, POP
+set X, POP
+set PUSH, B
+jsr fs_add_to_directory
+set C, POP
+set PC, POP
+
+;A: &name, B: &parent, C: parent_cluster, X:size
+:fs_create_file
+
+							;If no directory is specified default to parent directory
+ife B, 0
+	set B, 0x0200
+ife C, 0
+	set C, 1
+set PUSH, B
+set PUSH, C
+							;Get enough free entries
+set PUSH, A
+set PUSH, X
+set A, X					;Size of file + file header structure
+add A, 19
+set X, B					;Address of parent
+set B, [fs_file_magic]		;Magic word for handler
+jsr fs_get_free_sector
+set X, POP
+set A, POP
+
+set PUSH, C
+set PUSH, X
+
+set B, [fs_buffer]			;Write entry into first byte
+set [B], C					
+add B, 1
+jsr fs_str_copy				;Copy name into the next 16 bytes
+
+set I, [fs_buffer]			;Fill the rest of the buffer with 0s
+set [I+18], POP
+add I, 19
+set J, I
+sub J, [fs_buffer]
+:fs_create_file_loop
+sti [I], 0
+ifl J, [fs_sector_size]
+	set PC, fs_create_file_loop
+
+set A, [fs_buffer]			;Write buffer to disk
+set B, [fs_sector_size]
+set C, POP
+set X, C
+set PUSH, C
+jsr fs_get_current_cluster	;Set C to the current cluster
+jsr write_memory
+
+jsr fs_get_current_cluster
+set A, C
+set B, POP
+set C, POP
+set X, POP
+set PUSH, B
+jsr fs_add_to_directory
+
+set C, POP
+
+set PC, POP
+
+;A: Cluster, B: Address, C:directory Cluster, X:directory Address
+:fs_add_to_directory
+ife A, C
+	ife B, X
+		set PC, POP
+set PUSH, A
+set PUSH, B
+set A, C
+set B, X
+
+jsr fs_load_directory
+set I, [fs_directory_buffer]
+add I, 18
+set J, 0
+:fs_add_to_directory_loop
+add I, 2
+add J, 2
+ife [I], 0
+	set PC, fs_add_to_directory_success
+ifl J, 492
+	set PC, fs_add_to_directory_loop
+set PC, POP
+:fs_add_to_directory_success
+set [I+1], POP
+set [I], POP
+set A, [fs_directory_buffer]
+set B, 512
+jsr fs_get_current_cluster
+set X, [A]
+jsr write_memory
+set PC, POP
+
+;A: directory Cluster, B: directory Address
+:fs_load_directory
+set PUSH, A
+set PUSH, B
+jsr fs_load_cluster_info
+set B, POP
+set A, POP
+shr B, 7
+add B, [fs_cluster_buffer]
+ifn [B], [fs_directory_magic]
+	set PC, fs_error_no_directory
+set A, [B+1]
+set B, 512
+jsr fs_get_current_cluster
+set X, [fs_directory_buffer]
+jsr read_memory
+set PC, POP
+
+:fs_error_no_directory
+set PC, halt
+set PC, POP
+
+:fs_get_current_cluster
+set C, [fs_cluster_buffer]
+set C, [C]
+set PC, POP
+
+;A: address, B:Cluster
+:fs_print_entry_info
+set PUSH, A
+set A, B
+jsr fs_load_cluster_info
+set A, POP
+shr A, 7; A=A/512*4
+set C, [fs_cluster_buffer]
+add A, C
+ife [A], [fs_file_magic]
+	jsr fs_print_file_info
+ife [A], [fs_directory_magic]
+	jsr fs_print_directory_info
+set PC, POP
+
+
+:fs_print_file_info
+;Read the file info into a buffer
+jsr fs_get_current_cluster
+set A, [A+1]
+set B, 19
+set X, [fs_buffer]
+jsr read_memory
+;file header should be in [fs_buffer] now
+set A, fs_file_string
+jsr print
+
+set A, fs_name_string
+jsr print
+set A, [fs_buffer]
+add A, 1
+jsr print
+jsr console_new_line
+
+set A, fs_size_string
+jsr print
+set A, [fs_buffer]
+set A, [A+18]
+jsr print_val
+jsr console_new_line
+
+set PC, POP
+
+:fs_print_directory_info
+;Read the directory info into a buffer
+jsr fs_get_current_cluster
+set A, [A+1]
+set B, 512
+set X, [fs_buffer]
+jsr read_memory
+;file header should be in [fs_buffer] now
+set A, fs_directory_string
+jsr print
+set A, fs_name_string
+jsr print
+set A, [fs_buffer]
+add A, 1
+set PUSH, A
+jsr print
+jsr console_new_line
+set A, fs_files_string
+jsr print
+set A, POP
+add A, 15
+set J, 0
+:fs_print_directory_info_loop
+add A, 2
+add J, 2
+ifg J, 492
+	set PC, POP
+ife [A], 0
+	set PC, fs_print_directory_info_loop
+set PUSH, A
+set PUSH, J
+set PUSH, [A+1]
+set PUSH, [A]
+set A, fs_cluster_string
+jsr print
+set A, POP
+jsr print_val
+set A, fs_address_string
+jsr print
+set A, POP
+jsr print_val
+jsr console_new_line
+set J, POP
+set A, POP
+set PC, fs_print_directory_info_loop
+
+:fs_load_root_directory
+set A, 1
+set B, 0x0200
+jsr fs_load_directory
+set PC, POP
+
+;A: address, B:Cluster
+:fs_print_entry_info_short
+set PUSH, A
+set A, B
+jsr fs_load_cluster_info
+set A, POP
+shr A, 7; A=A/512*4
+set C, [fs_cluster_buffer]
+add A, C
+ife [A], [fs_file_magic]
+	jsr fs_print_file_info_short
+ife [A], [fs_directory_magic]
+	jsr fs_print_directory_info_short
+set PC, POP
+
+:fs_print_file_info_short
+;Read the file info into a buffer
+jsr fs_get_current_cluster
+set A, [A+1]
+set B, 19
+set X, [fs_buffer]
+jsr read_memory
+
+set A, [fs_buffer]
+set A, [A]
+jsr print_val
+set A, fs_file_inline_string
+jsr print
+set A, [fs_buffer]
+set A, [A+18]
+jsr print_val
+set A, [fs_buffer]
+add A, 1
+jsr print
+jsr console_new_line
+set PC, POP
+
+:fs_print_directory_info_short
+;Read the directory info into a buffer
+jsr fs_get_current_cluster
+set A, [A+1]
+set B, 19
+set X, [fs_buffer]
+jsr read_memory
+
+set A, [fs_buffer]
+set A, [A]
+jsr print_val
+set A, fs_dir_inline_string
+jsr print
+set A, [fs_buffer]
+set A, [A+18]
+jsr print_val
+set A, [fs_buffer]
+add A, 1
+jsr print
+jsr console_new_line
+set PC, POP
+
+:fs_ls
+set I, [fs_directory_buffer]
+add I, 18
+set J, 18
+:fs_ls_loop
+sti B, [I]
+sti A, [I]
+ifg J, 512
+	set PC, fs_ls_loop_end
+ife B, 0
+	set PC, fs_ls_loop
+set PUSH, J
+set PUSH, I
+jsr fs_print_entry_info_short
+set I, POP
+set J, POP
+set PC, fs_ls_loop
+
+:fs_ls_loop_end
+set PC, POP
+
+:fs_format_magic
+dat 0xFEED
+:fs_directory_magic
+dat 0xDEAD
+:fs_file_magic
+dat 0xDEAF
+
+:fs_sector_size
+dat 0x0200
+
+:fs_buffer
+dat 0x0000
+
+:fs_directory_buffer
+dat 0x0000
+
+:fs_cluster_buffer
+dat 0x0000
+
+:fs_file_string
+dat "File",0x11,0
+:fs_directory_string
+dat "Directory",0x11,0
+:fs_invalid_string
+dat "Invalid", 0x11,0
+:fs_info_header
+dat 0x11,"_Info_",0x11,0
+:fs_name_string
+dat "Name: ",0
+:fs_size_string
+dat "Size: ",0
+:fs_files_string
+dat "Nodes: ", 0x11, 0
+:fs_cluster_string
+dat "Cluster: ",0
+:fs_address_string
+dat " Address: ",0
+:fs_parent_string
+dat "Parent: ",0
+:fs_file_inline_string
+dat "File ",0
+:fs_dir_inline_string
+dat "Dir  ",0
+
+:fs_root_directory_string
+dat "root",0
+
+:fs_not_formated_error
+dat "File system invalid",0x11,0
+
+:fs_no_directory_error
+dat "Node is not a directory",0x11,0
+
+:fs_out_of_memory
+dat "Not enough memory",0x11,0

@@ -1,0 +1,32 @@
+; --------------------------------------------
+; Title:   process
+; Author:  Ole
+; Date:    03.11.2012
+; Version: 
+; --------------------------------------------
+
+;process
+;[+0]: pid
+;[+1]: context
+
+;exec
+:exec
+;Store A and B and create new context for process
+set PUSH, A
+set PUSH, B
+jsr context_create
+;Restore A and B
+set B, POP
+set A, POP
+;Set PC address of new context
+set [C+1], A
+set PUSH, C
+jsr context_switch
+set PC, POP
+
+:exit
+set A, [current_context]
+set PUSH, [A]	;Context switch to parent context
+jsr dealloc
+set [current_context], 0
+jsr context_switch

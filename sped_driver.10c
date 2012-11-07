@@ -1,0 +1,81 @@
+; --------------------------------------------
+; Title:   sped_driver
+; Author:  Ole
+; Date:    05.11.2012
+; Version: 
+; --------------------------------------------
+
+:sped_detected
+set PUSH, I
+set PUSH, J
+ifn [sped_device_version], C
+	set PC, POP
+set [sped_id], I
+jsr sped_initialize
+set J, POP
+set I, POP
+set PC, POP
+
+:sped_initialize
+set A, 0
+set B, [sped_max_vertices]
+shl B, 1
+jsr malloc
+set [sped_vertex_buffer], C
+set X, [sped_vertex_buffer]
+set Y, 0
+set A, 1
+hwi [sped_id]
+set PC, POP
+
+;A: X, B: Y, C: Z
+:sped_add_point
+ife [sped_current_num_vertices], [sped_max_vertices]
+	set PC, POP
+set X, [sped_current_num_vertices]
+shl X, 1
+add X, [sped_vertex_buffer]
+and A, 0x00ff
+and B, 0x00ff
+and C, 0x00ff
+shl B, 8
+bor A, B
+bor C, [sped_vertex_color]
+set [X], A
+set [X+1], C
+add [sped_current_num_vertices], 1
+set X, [sped_vertex_buffer]
+set Y, [sped_current_num_vertices]
+set A, 1
+set PC, POP
+
+:sped_remove_point
+ife [sped_current_num_vertices], 0
+	set PC, POP
+sub [sped_current_num_vertices], 1
+set X, [sped_vertex_buffer]
+set Y, [sped_current_num_vertices]
+set A, 1
+set PC,POP
+
+:sped_clear
+set X, [sped_vertex_buffer]
+set Y,0
+hwi [sped_id]
+
+:sped_device_idB
+dat 0x42ba
+:sped_device_idA
+dat 0xbf3c
+:sped_device_version
+dat 0x0003
+:sped_vertex_buffer
+dat 0x0000
+:sped_max_vertices
+dat 0x0040
+:sped_current_num_vertices
+dat 0x0000
+:sped_vertex_color
+dat 0x0300
+:sped_id
+dat 0xffff

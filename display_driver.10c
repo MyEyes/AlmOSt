@@ -1,0 +1,90 @@
+; --------------------------------------------
+; Title:   display_driver
+; Author:  Ole
+; Date:    31.10.2012
+; Version: 
+; --------------------------------------------
+
+:display_detected
+set PUSH, I
+set PUSH, J
+ifn C, [display_version]
+	set PC, POP
+set [display_id], I
+jsr display_initialize
+set J, POP
+set I, POP
+set PC, POP
+
+:display_initialize
+
+set A, 0
+set B, 0x180
+jsr malloc
+
+set [display_buffer], C
+set [display_buffer_start], C
+sub [display_buffer_start], 1
+set [display_buffer_end], C
+add [display_buffer_end], 0x180
+
+set A, 0
+set B, [display_buffer]
+hwi [display_id]
+
+set PC, POP
+
+;puts a char on the screen if it's inside the memory region of the screen and it's a valid character
+:putc
+ifg I, [display_buffer_start]
+	ifg [display_buffer_end], I
+		set [I], B
+set PC, POP
+
+;scrolls up one line
+:scroll
+set A, [display_buffer]
+set B, A
+add A, 32 ;Offset by one line
+;Copy to the line above
+:scroll_loop
+	set [B], [A]
+	add A, 1
+	add B, 1
+	ifl A, [display_buffer_end]
+		set PC, scroll_loop
+;Clear the last line
+:scroll_loop_2
+	set [B], 0
+	add B, 1
+	ifl B, [display_buffer_end]
+		set PC, scroll_loop_2
+set PC, POP
+
+:display_clear
+set I, [display_buffer]
+:display_clear_loop
+set [I], 0
+add I, 1
+ifl I, [display_buffer_end]
+	set PC, display_clear_loop
+set PC, POP
+	
+:display_device_idB
+dat 0x7349
+:display_device_idA
+dat 0xf615
+:display_version
+dat 0x1802
+:display_id
+dat 0xffff
+:display_buffer
+dat 0x4000
+
+:character_value_mask
+dat 0x00ff
+;Start decreased by one, End increased by one, since there are no lesser/greater or equal operations
+:display_buffer_start
+dat 0x3fff
+:display_buffer_end
+dat 0x4180

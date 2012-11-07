@@ -1,0 +1,12 @@
+; --------------------------------------------
+; Title:   TestProgram
+; Author:  Ole
+; Date:    03.11.2012
+; Version: 
+; --------------------------------------------
+
+:test_program
+set A, 45
+set B, 78
+set X, 0x9567
+jsr exit

@@ -1,0 +1,160 @@
+; --------------------------------------------
+; Title:   console
+; Author:  Ole
+; Date:    31.10.2012
+; Version: 
+; --------------------------------------------
+
+;We want to check for keyboard input and a monitor here
+:init_console
+ife [display_id], 0xffff
+	jsr exit
+	
+set [print_call], console_print
+set [print_error_call], console_print_error
+set [print_val_call], console_print_val
+
+set [cursor_position], [display_buffer]
+set [command_start], [display_buffer]
+
+set A, welcome_text
+jsr console_print
+
+ife [keyboard_id], 0xffff
+	set A, no_keyboard_error
+ife [keyboard_id], 0xffff
+	jsr print_error
+ife [keyboard_id], 0xffff
+	jsr exit
+set PC, POP
+
+;prints the C-style string located at A
+:console_print_error
+set I, [cursor_position]
+set C, [error_color]
+set PC, console_print_loop
+:console_print
+set I, [cursor_position]
+set C, [text_color]
+:console_print_loop
+set B, [A]
+bor B, C
+jsr putc
+add I, 1
+add A, 1
+ife [A], 0x11
+	jsr console_new_line
+ife I, [display_buffer_end]
+	jsr console_scroll
+ifg I, [display_buffer_end]
+	jsr console_scroll
+ifn [A], 0
+	set PC, console_print_loop
+set [cursor_position], I
+set [command_start], I
+set PC, POP
+
+;prints the value A
+:console_print_val
+set I, [cursor_position]
+set C, [text_color]
+set X, 10000
+set J, 0
+set B, A
+div B, X
+:console_print_val_loop
+ife I, [display_buffer_end]
+	jsr console_scroll
+add B, 0x30		;0x30 is ASCII '0'
+bor B, C
+jsr putc
+sti B, A		;B=A
+mod B, X
+div X, 10
+div B, X		;B/=X
+ifl J, 5
+	set PC, console_print_val_loop
+add [cursor_position], 6
+set PC, POP
+
+:console_new_line
+set Z, I
+add Z, 0x20
+sub Z, [display_buffer]
+div Z, 0x20
+mul Z, 0x20
+add Z, [display_buffer]
+set [cursor_position], Z
+set I, Z
+add A, 1
+set PC, POP
+
+:console_clear
+jsr display_clear
+set PC, POP
+
+
+:console_scroll
+;Push registers so we can use this call inside console without second thoughts
+set PUSH, A
+set PUSH, B
+jsr scroll
+set B, POP
+set A, POP
+;Move
+sub I, 0x20
+set [cursor_position], I
+sub [command_start], 0x20
+set PC, POP
+
+:console_start
+set I, [cursor_position]
+jsr keyboard_clear_input
+
+:console_get_input
+jsr keyboard_getc
+and C, [character_value_mask]
+ifg C, 0x1f
+	ifl C, 0x80
+		jsr console_putc
+
+ife C, 0x11
+	jsr console_handle_input
+	
+ife I, [display_buffer_end]
+	jsr console_scroll
+ifg I, [display_buffer_end]
+	jsr console_scroll
+	
+set PC, console_get_input
+set PC, POP
+
+:console_putc
+set B, C
+bor B, [text_color]
+set I, [cursor_position]
+jsr putc
+add I, 1
+set [cursor_position], I
+set PC, POP
+
+:console_handle_input
+jsr console_new_line
+set [command_start], [cursor_position]
+jsr keyboard_clear_input
+set PC, POP
+
+:cursor_position
+dat 0x4000
+:command_start
+dat 0x4000
+
+:text_color
+dat 0x7000
+:error_color
+dat 0x4080
+
+:welcome_text
+dat "Welcome to lOSt!",0x11, "And more text to get a new line",0x11,0
+:no_keyboard_error
+dat "No keyboard was found!",0

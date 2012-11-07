@@ -1,0 +1,96 @@
+; --------------------------------------------
+; Title:   Core
+; Author:  Ole
+; Date:    31.10.2012
+; Version: 
+; --------------------------------------------
+
+:core_initialize
+jsr enter_kernel_context
+
+jsr core_hardware_detection
+
+jsr fs_initialize
+
+jsr init_console
+
+set A, test_create_fs_string
+jsr print
+
+jsr fs_format
+
+jsr fs_check
+
+set A, test_folder_name
+set B, 0
+set C, 0
+set X, 800
+jsr fs_create_directory
+
+set A, test_folder_name
+set B, 0
+set C, 0
+set X, 800
+jsr fs_create_file
+
+set I, [cursor_position]
+jsr console_new_line
+set A, test_fs_entry_data
+jsr print
+
+jsr fs_get_current_cluster
+set A, 0x0200
+set B, 1
+jsr fs_print_entry_info
+
+set I, [cursor_position]
+jsr console_new_line
+set A, test_root_ls
+jsr print
+
+jsr fs_load_root_directory
+jsr fs_ls
+
+set A, console_start
+jsr exec
+jsr display_clear
+set PC, halt
+
+:core_hardware_detection
+hwn J
+set I, 0
+
+:core_hardware_detection_loop
+hwq I
+ife B, [display_device_idB]
+	ife A, [display_device_idA]
+		jsr display_detected
+ife B, [keyboard_device_idB]
+	ife A, [keyboard_device_idA]
+		jsr keyboard_detected
+ife B, [floppy_device_idB]
+	ife A, [floppy_device_idA]
+		jsr floppy_detected
+ife B, [sped_device_idB]
+	ife A, [sped_device_idA]
+		jsr sped_detected
+ife B, [hmd_device_idB]
+	ife A, [hmd_device_idA]
+		jsr hmd_detected
+add I, 1
+ifn I, J
+	set PC, core_hardware_detection_loop
+set PC, POP
+
+:test_folder_name
+dat "Test",0
+:test_create_fs_string
+dat "Creating filesystem...", 0x11,0
+:test_adding_dir_string
+dat "Adding Directory...", 0x11, 0
+:test_adding_file_string
+dat "Adding File...",0x11,0
+:test_fs_entry_data
+dat "FS_Entry info",0x11,0
+:test_root_ls
+dat "ls root",0x11,0

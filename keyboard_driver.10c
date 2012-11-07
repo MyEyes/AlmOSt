@@ -1,0 +1,34 @@
+; --------------------------------------------
+; Title:   keyboard_driver
+; Author:  Ole
+; Date:    31.10.2012
+; Version: 
+; --------------------------------------------
+:keyboard_detected
+set PUSH, I
+set PUSH, J
+ifn [keyboard_version], C
+	set PC, POP
+set [keyboard_id], I
+set J, POP
+set I, POP
+set PC, POP
+
+:keyboard_getc
+set A, 1
+hwi [keyboard_id]
+set PC, POP
+
+:keyboard_clear_input
+set A, 0
+hwi [keyboard_id]
+set PC, POP
+
+:keyboard_device_idA
+dat 0x7406
+:keyboard_device_idB
+dat 0x30cf
+:keyboard_version
+dat 0x0001
+:keyboard_id
+dat 0xffff

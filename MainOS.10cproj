@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<project version="1.7.5" type="code">
+  <name>MainOS</name>
+  <properties>
+    <property name="code.generateBinaryOutput">true</property>
+    <property name="code.binaryOutputFilename">MainOS.bin</property>
+    <property name="code.generateHexOutput">True</property>
+    <property name="code.hexOutputFilename">MainOS.hex</property>
+    <property name="code.setFirstFile">false</property>
+  </properties>
+  <references />
+  <files>
+    <file path="Main.10c" />
+    <file path="display_driver.10c" />
+    <file path="Memory Map.10c" />
+    <file path="Core.10c" />
+    <file path="keyboard_driver.10c" />
+    <file path="console.10c" />
+    <file path="malloc.10c" />
+    <file path="io.10c" />
+    <file path="floppy_driver.10c" />
+    <file path="file_system.10c" />
+    <file path="execution_context.10c" />
+    <file path="TestProgramm.10c" />
+    <file path="process.10c" />
+    <file path="string.10c" />
+    <file path="sped_test.10c" />
+    <file path="sped_driver.10c" />
+    <file path="hmd_driver.10c" />
+  </files>
+</project>

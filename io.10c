@@ -1,0 +1,49 @@
+; --------------------------------------------
+; Title:   io
+; Author:  Ole
+; Date:    01.11.2012
+; Version: 
+; --------------------------------------------
+
+
+;read: 	A: Disk Address, B: Size, C: Cluster, X: Memory Address
+;write:	A: Memory Address, B: Size, C: Cluster, X: Disk Address
+
+:print
+ife [print_call], 0xffff
+	set PC, POP
+set PC, [print_call]
+
+:print_call
+dat 0xffff
+
+:print_val
+ife [print_val_call], 0xffff
+	set PC, POP
+set PC, [print_val_call]
+:print_val_call
+dat 0xffff
+
+:print_error
+ife [print_error_call], 0xffff
+	set PC, POP
+set PC, [print_error_call]
+
+:print_error_call
+dat 0xffff
+
+:read_memory
+ife [read_memory_call], 0xffff
+	set PC, POP
+set PC, [read_memory_call]
+
+:read_memory_call
+dat 0xffff
+
+:write_memory
+ife [write_memory_call], 0xffff
+	set PC, POP
+set PC, [write_memory_call]
+
+:write_memory_call
+dat 0xffff

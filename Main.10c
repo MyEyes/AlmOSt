@@ -1,0 +1,11 @@
+; --------------------------------------------
+; Title:   Main
+; Author:  Ole
+; Date:    28.10.2012
+; Version: 
+; --------------------------------------------
+:entry
+set PC, core_initialize
+
+:halt
+set PC, halt

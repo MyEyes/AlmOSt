@@ -1,0 +1,142 @@
+; --------------------------------------------
+; Title:   execution_context
+; Author:  Ole
+; Date:    02.11.2012
+; Version: 
+; --------------------------------------------
+
+;execution context
+;	0:		parent_context
+;	1:		PC
+;	2:		SP
+;	3:		EX
+;	4:		A
+;	5:		B
+;	6: 		C
+;	7:		I
+;	8: 		X
+;	9: 		Y
+;	10:		Z
+;	11:		J
+
+;Creates a new empty context
+:context_create
+set A, 1
+set B, [default_context_size]
+jsr malloc
+set [C], [current_context]
+set [C+11], 0
+set [C+10], 0
+set [C+9], 0
+set [C+8], 0
+set [C+7], 0
+set [C+6], 0
+set [C+5], 0
+set [C+4], 0
+set [C+3], 0
+set [C+2], C
+add [C+2], [default_context_size]
+set [C+1], 0
+set PC, POP
+
+:enter_kernel_context
+set PUSH, A
+set PUSH, B
+set PUSH, C
+set PUSH, I
+set PUSH, X
+set PUSH, Y
+set PUSH, Z
+set PUSH, J
+set A, 1
+set B, [kernel_context_size]
+jsr malloc
+set [C], 0
+set [C+11], 0
+set [C+10], 0
+set [C+9], 0
+set [C+8], 0
+set [C+7], 0
+set [C+6], 0
+set [C+5], 0
+set [C+4], 0
+set [C+3], 0
+set [C+2], C
+add [C+2], [kernel_context_size]
+set [C+1], 0
+set [kernel_context], C
+set J, POP
+set Z, POP
+set Y, POP
+set X, POP
+set I, POP
+set C, POP
+set B, POP
+set A, POP
+set [current_context], POP
+set SP, [kernel_context]
+set SP, [SP+2]
+set PUSH, [kernel_context]
+set PUSH, [current_context]
+set [current_context], [kernel_context]
+set PC, context_switch
+
+;[SP]: return address for call, [SP-1] context address to switch to
+:context_switch
+ifn [current_context], 0
+	set PC, context_store
+;If we don't store the return address in an execution context we need to patch the SP
+add SP, 1
+:context_store_return
+set [current_context], POP
+set PC, context_load
+
+:context_store
+set PUSH, A
+set A, [current_context]
+set [A+11], J
+set [A+10], Z
+set [A+9], Y
+set [A+8], X
+set X, A
+set A, POP
+set [X+7], I
+set [X+6], C
+set [X+5], B
+set [X+4], A
+set [X+3], EX
+
+;We need to patch the stored SP,
+;because at this point it still contains the return address and the address of the context to switch to
+set [X+2], SP
+add [X+2], 2
+
+set [X+1], POP
+set PC, context_store_return
+
+:context_load
+set J, [current_context]
+set SP, [J+2]
+set PUSH, [J+1]
+set EX, [J+3]
+set A, [J+4]
+set B, [J+5]
+set C, [J+6]
+set I, [J+7]
+set X, [J+8]
+set Y, [J+9]
+set Z, [J+10]
+set J, [J+11]
+set PC, POP
+
+:current_context
+dat 0x0000
+
+:kernel_context
+dat 0x0000
+
+:kernel_context_size
+dat 0x0200
+
+:default_context_size
+dat 0x0100
